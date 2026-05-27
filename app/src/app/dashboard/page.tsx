@@ -2,26 +2,68 @@
 
 import AuthGuard from "@/components/AuthGuard";
 import { usePrivy } from "@privy-io/react-auth";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useEffect, useState } from "react";
+import { getOrCreateGuestWallet } from "@/lib/guest";
+import { getUserProfile } from "@/lib/genlayer";
 
 const GAMES = [
   { name: "Trivia Royale", href: "/trivia-royale", description: "AI-verified trivia battles" },
   { name: "Prompt Wars", href: "/prompt-wars", description: "Compete with AI prompt engineering" },
-  { name: "Predictions", href: "/predictions", description: "Bet on AI-adjudicated outcomes" },
+  { name: "Predictions", href: "/predictions", description: "Predict AI-judged real-world outcomes" },
   { name: "Title Wars", href: "/title-wars", description: "Best headline wins" },
 ];
 
 export default function DashboardPage() {
-  const { user } = usePrivy();
+  const { ready, authenticated, user } = usePrivy();
+  const router = useRouter();
+  const [guestUsername, setGuestUsername] = useState<string | null>(null);
+  const [loadingGuest, setLoadingGuest] = useState(false);
+
+  useEffect(() => {
+    if (!ready) return;
+    if (authenticated) return;
+
+    const guestKey = typeof window !== "undefined" ? localStorage.getItem("gengame_guest_key") : null;
+    if (!guestKey) return;
+
+    const wallet = getOrCreateGuestWallet();
+    setLoadingGuest(true);
+    getUserProfile(wallet.address)
+      .then((profile) => {
+        if (!profile) {
+          router.push("/sign-in/username");
+        } else {
+          setGuestUsername(profile.username as string);
+        }
+      })
+      .catch(() => {
+        router.push("/sign-in/username");
+      })
+      .finally(() => setLoadingGuest(false));
+  }, [ready, authenticated, router]);
+
+  const displayName = user?.github?.username
+    ? `@${user.github.username}`
+    : guestUsername
+    ? guestUsername
+    : null;
+
+  if (loadingGuest) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="text-white">Loading...</div>
+      </div>
+    );
+  }
 
   return (
     <AuthGuard>
       <main className="min-h-screen p-8">
         <h1 className="mb-2 text-3xl font-bold">Arena</h1>
         <p className="mb-8 text-gray-400">
-          {user?.github?.username
-            ? `Welcome, @${user.github.username}`
-            : "Welcome, player"}
+          {displayName ? `Welcome, ${displayName}` : "Welcome, player"}
         </p>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

@@ -4,10 +4,14 @@ import AuthGuard from "@/components/AuthGuard";
 import Link from "next/link";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { createPromptWarsMatch, getRecentMatches } from "@/lib/genlayer";
+import {
+  createPromptWarsMatch,
+  getRecentMatches,
+  getMatchesForPlayer,
+  getMatch,
+} from "@/lib/genlayer";
 import type { Match } from "@/lib/genlayer";
-import { getOrCreateGuestWallet } from "@/lib/guest";
-import { usePrivy } from "@privy-io/react-auth";
+import { useActiveWallet } from "@/lib/useActiveWallet";
 
 const STATE_LABELS: Record<number, string> = {
   0: "Waiting for player 2",
@@ -19,17 +23,14 @@ const STATE_LABELS: Record<number, string> = {
 
 const ZERO_ADDR = "0x" + "0".repeat(40);
 
-function getPrivateKey(): `0x${string}` | undefined {
-  if (typeof window === "undefined") return undefined;
-  return (localStorage.getItem("gengame_guest_key") as `0x${string}`) ?? undefined;
-}
-
 export default function PromptWarsPage() {
   const router = useRouter();
-  const { user } = usePrivy();
+  const { wallet, ready } = useActiveWallet();
   const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState("");
   const [joinId, setJoinId] = useState("");
   const [recentMatches, setRecentMatches] = useState<Match[]>([]);
+  const [myMatches, setMyMatches] = useState<Match[]>([]);
   const [loadingMatches, setLoadingMatches] = useState(true);
 
   useEffect(() => {
@@ -38,20 +39,26 @@ export default function PromptWarsPage() {
       .finally(() => setLoadingMatches(false));
   }, []);
 
+  useEffect(() => {
+    if (!wallet?.address) return;
+    getMatchesForPlayer(wallet.address).then(async (ids) => {
+      const results = await Promise.all(ids.map((id) => getMatch(id)));
+      setMyMatches(results.filter((m): m is Match => m !== null));
+    });
+  }, [wallet?.address]);
+
   async function handleCreate() {
-    const pk =
-      getPrivateKey() ??
-      (user as unknown as { wallet?: { privateKey?: `0x${string}` } })?.wallet?.privateKey;
-    if (!pk) {
-      alert("No wallet found. Please sign in first.");
+    if (!wallet) {
+      setCreateError("No wallet found. Please sign in first.");
       return;
     }
     setCreating(true);
+    setCreateError("");
     try {
-      const { matchId } = await createPromptWarsMatch(pk);
+      const { matchId } = await createPromptWarsMatch(wallet);
       router.push(`/prompt-wars/${matchId}`);
     } catch (err) {
-      alert(`Failed to create match: ${err instanceof Error ? err.message : String(err)}`);
+      setCreateError(err instanceof Error ? err.message : String(err));
     } finally {
       setCreating(false);
     }
@@ -62,6 +69,47 @@ export default function PromptWarsPage() {
     const id = joinId.trim().replace(/.*\/prompt-wars\//, "");
     if (!id) return;
     router.push(`/prompt-wars/${id}`);
+  }
+
+  function MatchRow({ m }: { m: Match }) {
+    const state = Number(m.state);
+    return (
+      <Link
+        href={`/prompt-wars/${m.id}`}
+        className="block rounded-xl border border-gray-700 p-4 hover:border-indigo-500 transition-colors"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm text-gray-300">{m.target_text}</p>
+            <p className="mt-1 text-xs text-gray-500">
+              {m.player1?.toLowerCase() !== ZERO_ADDR.toLowerCase()
+                ? `${m.player1.slice(0, 8)}…`
+                : "?"}
+              {" vs "}
+              {m.player2?.toLowerCase() !== ZERO_ADDR.toLowerCase()
+                ? `${m.player2.slice(0, 8)}…`
+                : "Waiting…"}
+              {state === 4 && m.winner?.toLowerCase() !== ZERO_ADDR.toLowerCase() && (
+                <span className="ml-2 text-yellow-400">
+                  Winner: {m.winner.slice(0, 8)}…
+                </span>
+              )}
+            </p>
+          </div>
+          <span
+            className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
+              state === 4
+                ? "bg-green-900 text-green-300"
+                : state === 0
+                ? "bg-yellow-900 text-yellow-300"
+                : "bg-blue-900 text-blue-300"
+            }`}
+          >
+            {STATE_LABELS[state] ?? "Unknown"}
+          </span>
+        </div>
+      </Link>
+    );
   }
 
   return (
@@ -80,9 +128,10 @@ export default function PromptWarsPage() {
         <div className="mb-10 grid gap-4 sm:grid-cols-2">
           <div className="rounded-xl border border-gray-700 p-6">
             <h2 className="mb-3 text-lg font-semibold">New Match</h2>
+            {createError && <p className="mb-2 text-sm text-red-400">{createError}</p>}
             <button
               onClick={handleCreate}
-              disabled={creating}
+              disabled={creating || !ready}
               className="w-full rounded-lg bg-indigo-600 py-3 font-semibold hover:bg-indigo-500 disabled:opacity-50"
             >
               {creating ? "Creating..." : "Create Match"}
@@ -108,6 +157,17 @@ export default function PromptWarsPage() {
           </div>
         </div>
 
+        {myMatches.length > 0 && (
+          <section className="mb-10">
+            <h2 className="mb-4 text-xl font-semibold">My Matches</h2>
+            <div className="space-y-3">
+              {myMatches.map((m) => (
+                <MatchRow key={String(m.id)} m={m} />
+              ))}
+            </div>
+          </section>
+        )}
+
         <section>
           <h2 className="mb-4 text-xl font-semibold">Recent Matches</h2>
           {loadingMatches ? (
@@ -116,47 +176,9 @@ export default function PromptWarsPage() {
             <p className="text-gray-500">No matches yet. Create the first one!</p>
           ) : (
             <div className="space-y-3">
-              {recentMatches.map((m) => {
-                const state = Number(m.state);
-                return (
-                  <Link
-                    key={String(m.id)}
-                    href={`/prompt-wars/${m.id}`}
-                    className="block rounded-xl border border-gray-700 p-4 hover:border-indigo-500 transition-colors"
-                  >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm text-gray-300">{m.target_text}</p>
-                        <p className="mt-1 text-xs text-gray-500">
-                          {m.player1?.toLowerCase() !== ZERO_ADDR.toLowerCase()
-                            ? `${m.player1.slice(0, 8)}…`
-                            : "?"}
-                          {" vs "}
-                          {m.player2?.toLowerCase() !== ZERO_ADDR.toLowerCase()
-                            ? `${m.player2.slice(0, 8)}…`
-                            : "Waiting…"}
-                          {state === 4 && m.winner?.toLowerCase() !== ZERO_ADDR.toLowerCase() && (
-                            <span className="ml-2 text-yellow-400">
-                              Winner: {m.winner.slice(0, 8)}…
-                            </span>
-                          )}
-                        </p>
-                      </div>
-                      <span
-                        className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
-                          state === 4
-                            ? "bg-green-900 text-green-300"
-                            : state === 0
-                            ? "bg-yellow-900 text-yellow-300"
-                            : "bg-blue-900 text-blue-300"
-                        }`}
-                      >
-                        {STATE_LABELS[state] ?? "Unknown"}
-                      </span>
-                    </div>
-                  </Link>
-                );
-              })}
+              {recentMatches.map((m) => (
+                <MatchRow key={String(m.id)} m={m} />
+              ))}
             </div>
           )}
         </section>

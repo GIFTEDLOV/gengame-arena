@@ -12,41 +12,41 @@ import {
   getUserProfile,
 } from "@/lib/genlayer";
 import type { Match } from "@/lib/genlayer";
-import { getOrCreateGuestWallet } from "@/lib/guest";
-import { usePrivy } from "@privy-io/react-auth";
+import { useActiveWallet } from "@/lib/useActiveWallet";
 
 const ZERO_ADDR = "0x" + "0".repeat(40);
 const MAX_PROMPT = 500;
 
-function getPrivateKey(): `0x${string}` | undefined {
-  if (typeof window === "undefined") return undefined;
-  return (localStorage.getItem("gengame_guest_key") as `0x${string}`) ?? undefined;
-}
-
-function useCurrentAddress(): string | null {
-  const { user } = usePrivy();
-  const [addr, setAddr] = useState<string | null>(null);
+function useCountdown(deadlineUnix: number | null): {
+  display: string;
+  expired: boolean;
+  color: string;
+} {
+  const [secsLeft, setSecsLeft] = useState<number | null>(null);
 
   useEffect(() => {
-    if (user?.wallet?.address) {
-      setAddr(user.wallet.address);
-      return;
-    }
-    const pk = getPrivateKey();
-    if (pk) {
-      import("viem/accounts").then(({ privateKeyToAccount }) => {
-        setAddr(privateKeyToAccount(pk).address);
-      });
-    }
-  }, [user]);
+    if (deadlineUnix === null) return;
+    const tick = () => setSecsLeft(Math.max(0, deadlineUnix - Math.floor(Date.now() / 1000)));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [deadlineUnix]);
 
-  return addr;
+  if (secsLeft === null) return { display: "", expired: false, color: "text-white" };
+  if (secsLeft === 0) return { display: "Time's up", expired: true, color: "text-red-400" };
+
+  const mm = String(Math.floor(secsLeft / 60)).padStart(2, "0");
+  const ss = String(secsLeft % 60).padStart(2, "0");
+  const color =
+    secsLeft < 10 ? "text-red-400" : secsLeft < 60 ? "text-amber-400" : "text-white";
+  return { display: `${mm}:${ss} remaining`, expired: false, color };
 }
 
 export default function MatchPage() {
   const { matchId } = useParams<{ matchId: string }>();
   const matchIdNum = Number(matchId);
-  const currentAddr = useCurrentAddress();
+  const { wallet } = useActiveWallet();
+  const currentAddr = wallet?.address ?? null;
 
   const [match, setMatch] = useState<Match | null>(null);
   const [loading, setLoading] = useState(true);
@@ -80,12 +80,18 @@ export default function MatchPage() {
     }
   }, [match]);
 
+  // Countdown for submission phase
+  const deadlineUnix =
+    match && (Number(match.state) === 1 || Number(match.state) === 2)
+      ? Number(match.submission_deadline)
+      : null;
+  const countdown = useCountdown(deadlineUnix);
+
   async function doJoin() {
-    const pk = getPrivateKey();
-    if (!pk) { setError("No wallet found."); return; }
+    if (!wallet) { setError("No wallet found."); return; }
     setTxPending(true); setError("");
     try {
-      await joinPromptWarsMatch(matchIdNum, pk);
+      await joinPromptWarsMatch(matchIdNum, wallet);
       await fetchMatch();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -95,12 +101,11 @@ export default function MatchPage() {
   }
 
   async function doSubmitPrompt() {
-    const pk = getPrivateKey();
-    if (!pk) { setError("No wallet found."); return; }
+    if (!wallet) { setError("No wallet found."); return; }
     if (prompt.length > MAX_PROMPT) { setError("Prompt too long."); return; }
     setTxPending(true); setError("");
     try {
-      await submitPrompt(matchIdNum, prompt, pk);
+      await submitPrompt(matchIdNum, prompt, wallet);
       await fetchMatch();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -110,11 +115,10 @@ export default function MatchPage() {
   }
 
   async function doJudge() {
-    const pk = getPrivateKey();
-    if (!pk) { setError("No wallet found."); return; }
+    if (!wallet) { setError("No wallet found."); return; }
     setTxPending(true); setError("");
     try {
-      await judgeMatch(matchIdNum, pk);
+      await judgeMatch(matchIdNum, wallet);
       await fetchMatch();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -174,6 +178,13 @@ export default function MatchPage() {
           <p className="text-lg">{match.target_text}</p>
         </div>
 
+        {/* Countdown — shown during submission phase */}
+        {countdown.display && (
+          <div className={`mb-4 text-sm font-semibold ${countdown.color}`}>
+            {countdown.display}
+          </div>
+        )}
+
         {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
 
         {/* STATE 0: WAITING_FOR_P2 */}
@@ -232,7 +243,7 @@ export default function MatchPage() {
                     </p>
                     <button
                       onClick={doSubmitPrompt}
-                      disabled={txPending || prompt.length === 0}
+                      disabled={txPending || prompt.length === 0 || countdown.expired}
                       className="rounded-lg bg-indigo-600 px-6 py-2 font-semibold hover:bg-indigo-500 disabled:opacity-50"
                     >
                       {txPending ? "Submitting…" : "Submit Prompt"}
@@ -269,7 +280,7 @@ export default function MatchPage() {
                 {winnerUsername ?? match.winner?.slice(0, 10) + "…"}
               </p>
               {match.winner?.toLowerCase() === currentAddr?.toLowerCase() && (
-                <p className="mt-1 text-green-400">🎉 That's you!</p>
+                <p className="mt-1 text-green-400">🎉 That&apos;s you!</p>
               )}
             </div>
 

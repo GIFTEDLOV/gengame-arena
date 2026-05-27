@@ -1,23 +1,46 @@
 import { createClient } from "genlayer-js";
-import type { Address } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
+import { toAccount } from "viem/accounts";
+import type { ActiveWallet } from "./useActiveWallet";
+
+// genlayer-js defines Address as `0x${string}` & { length: 42 }.
+// viem's Address is just `0x${string}`.  Cast through this helper to bridge the gap.
+type GLAddress = `0x${string}` & { length: 42 };
+function glAddr(a: string): GLAddress {
+  return a as GLAddress;
+}
 
 export const USER_REGISTRY_ADDRESS =
-  (process.env.NEXT_PUBLIC_USER_REGISTRY_ADDRESS as Address) ??
+  process.env.NEXT_PUBLIC_USER_REGISTRY_ADDRESS ??
   "0x698321Bb07b4536Cdc1DB7e7095eaB554feaE42b";
 
 export const PROMPT_WARS_ADDRESS =
-  (process.env.NEXT_PUBLIC_PROMPT_WARS_ADDRESS as Address) ?? ("" as Address);
+  process.env.NEXT_PUBLIC_PROMPT_WARS_ADDRESS ?? "";
 
 const RPC_URL =
   process.env.NEXT_PUBLIC_GENLAYER_RPC ?? "http://localhost:4000/api";
 
-export function getGenlayerClient(privateKey?: `0x${string}`) {
-  if (privateKey) {
-    const account = privateKeyToAccount(privateKey);
-    return createClient({ endpoint: RPC_URL, account });
-  }
+export function getGenlayerClient() {
   return createClient({ endpoint: RPC_URL });
+}
+
+function clientFromWallet(wallet: NonNullable<ActiveWallet>) {
+  // Wrap the wallet's signing functions into a viem LocalAccount (type: "local")
+  // so genlayer-js uses the sign-then-sendRaw path instead of eth_sendTransaction.
+  const account = toAccount({
+    address: glAddr(wallet.address),
+    async signMessage({ message }) {
+      const raw = typeof message === "string" ? message : message.raw;
+      return wallet.signMessage(typeof raw === "string" ? raw : Buffer.from(raw).toString("hex"));
+    },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    async signTransaction(tx: any) {
+      return wallet.signTransaction(tx);
+    },
+    async signTypedData() {
+      throw new Error("signTypedData not needed for GenLayer");
+    },
+  });
+  return createClient({ endpoint: RPC_URL, account });
 }
 
 export interface UserProfile {
@@ -51,7 +74,7 @@ export async function getUserProfile(address: string): Promise<UserProfile | nul
   const client = getGenlayerClient();
   try {
     const result = await client.readContract({
-      address: USER_REGISTRY_ADDRESS,
+      address: glAddr(USER_REGISTRY_ADDRESS),
       functionName: "get_profile",
       args: [address],
     });
@@ -61,10 +84,11 @@ export async function getUserProfile(address: string): Promise<UserProfile | nul
   }
 }
 
-export async function registerUser(username: string, privateKey: `0x${string}`): Promise<TxHash> {
-  const client = getGenlayerClient(privateKey);
+export async function registerUser(username: string, wallet: ActiveWallet): Promise<TxHash> {
+  if (!wallet) throw new Error("No wallet found");
+  const client = clientFromWallet(wallet);
   const hash = await client.writeContract({
-    address: USER_REGISTRY_ADDRESS,
+    address: glAddr(USER_REGISTRY_ADDRESS),
     functionName: "register_user",
     args: [username],
     value: BigInt(0),
@@ -76,17 +100,17 @@ export async function registerUser(username: string, privateKey: `0x${string}`):
 // ── Prompt Wars helpers ────────────────────────────────────────────────────
 
 export async function createPromptWarsMatch(
-  privateKey: `0x${string}`
+  wallet: ActiveWallet
 ): Promise<{ matchId: number; txHash: TxHash }> {
-  const client = getGenlayerClient(privateKey);
+  if (!wallet) throw new Error("No wallet found");
+  const client = clientFromWallet(wallet);
   const hash = await client.writeContract({
-    address: PROMPT_WARS_ADDRESS,
+    address: glAddr(PROMPT_WARS_ADDRESS),
     functionName: "create_match",
     args: [],
     value: BigInt(0),
   });
   const receipt = await client.waitForTransactionReceipt({ hash });
-  // Extract match ID from leader receipt return value
   const matchId = Number(
     (receipt as { consensus_data?: { leader_receipt?: { return_value?: unknown } } })
       ?.consensus_data?.leader_receipt?.return_value ?? 0
@@ -96,11 +120,12 @@ export async function createPromptWarsMatch(
 
 export async function joinPromptWarsMatch(
   matchId: number,
-  privateKey: `0x${string}`
+  wallet: ActiveWallet
 ): Promise<TxHash> {
-  const client = getGenlayerClient(privateKey);
+  if (!wallet) throw new Error("No wallet found");
+  const client = clientFromWallet(wallet);
   const hash = await client.writeContract({
-    address: PROMPT_WARS_ADDRESS,
+    address: glAddr(PROMPT_WARS_ADDRESS),
     functionName: "join_match",
     args: [matchId],
     value: BigInt(0),
@@ -112,11 +137,12 @@ export async function joinPromptWarsMatch(
 export async function submitPrompt(
   matchId: number,
   prompt: string,
-  privateKey: `0x${string}`
+  wallet: ActiveWallet
 ): Promise<TxHash> {
-  const client = getGenlayerClient(privateKey);
+  if (!wallet) throw new Error("No wallet found");
+  const client = clientFromWallet(wallet);
   const hash = await client.writeContract({
-    address: PROMPT_WARS_ADDRESS,
+    address: glAddr(PROMPT_WARS_ADDRESS),
     functionName: "submit_prompt",
     args: [matchId, prompt],
     value: BigInt(0),
@@ -127,11 +153,12 @@ export async function submitPrompt(
 
 export async function judgeMatch(
   matchId: number,
-  privateKey: `0x${string}`
+  wallet: ActiveWallet
 ): Promise<TxHash> {
-  const client = getGenlayerClient(privateKey);
+  if (!wallet) throw new Error("No wallet found");
+  const client = clientFromWallet(wallet);
   const hash = await client.writeContract({
-    address: PROMPT_WARS_ADDRESS,
+    address: glAddr(PROMPT_WARS_ADDRESS),
     functionName: "judge_match",
     args: [matchId],
     value: BigInt(0),
@@ -144,7 +171,7 @@ export async function getMatch(matchId: number): Promise<Match | null> {
   const client = getGenlayerClient();
   try {
     const result = await client.readContract({
-      address: PROMPT_WARS_ADDRESS,
+      address: glAddr(PROMPT_WARS_ADDRESS),
       functionName: "get_match",
       args: [matchId],
     });
@@ -158,11 +185,25 @@ export async function getRecentMatches(limit: number): Promise<Match[]> {
   const client = getGenlayerClient();
   try {
     const result = await client.readContract({
-      address: PROMPT_WARS_ADDRESS,
+      address: glAddr(PROMPT_WARS_ADDRESS),
       functionName: "get_recent_matches",
       args: [limit],
     });
-    return (result as Match[]) ?? [];
+    return (result as unknown as Match[]) ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export async function getMatchesForPlayer(playerAddress: string): Promise<number[]> {
+  const client = getGenlayerClient();
+  try {
+    const result = await client.readContract({
+      address: glAddr(PROMPT_WARS_ADDRESS),
+      functionName: "get_matches_for_player",
+      args: [playerAddress],
+    });
+    return ((result as bigint[]) ?? []).map(Number);
   } catch {
     return [];
   }

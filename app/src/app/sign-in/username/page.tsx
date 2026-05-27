@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { getOrCreateGuestWallet } from "@/lib/guest";
 import { registerUser } from "@/lib/genlayer";
+import { useActiveWallet } from "@/lib/useActiveWallet";
 
 export default function UsernamePage() {
   const router = useRouter();
+  const { wallet, ready } = useActiveWallet();
   const [username, setUsername] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -24,10 +25,14 @@ export default function UsernamePage() {
       return;
     }
 
-    const wallet = getOrCreateGuestWallet();
+    if (!wallet) {
+      setError("No wallet found. Please sign in again.");
+      return;
+    }
+
     setLoading(true);
     try {
-      await registerUser(username, wallet.privateKey);
+      await registerUser(username, wallet);
       router.push("/dashboard");
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -54,7 +59,7 @@ export default function UsernamePage() {
         {error && <p className="text-sm text-red-400">{error}</p>}
         <button
           type="submit"
-          disabled={loading || username.length < 3}
+          disabled={loading || username.length < 3 || !ready}
           className="rounded-lg bg-indigo-600 py-3 font-semibold hover:bg-indigo-500 disabled:opacity-50"
         >
           {loading ? "Registering..." : "Continue"}

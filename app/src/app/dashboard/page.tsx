@@ -5,8 +5,8 @@ import { usePrivy } from "@privy-io/react-auth";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { getOrCreateGuestWallet } from "@/lib/guest";
 import { getUserProfile } from "@/lib/genlayer";
+import { useActiveWallet } from "@/lib/useActiveWallet";
 
 const GAMES = [
   { name: "Trivia Royale", href: "/trivia-royale", description: "AI-verified trivia battles" },
@@ -16,19 +16,19 @@ const GAMES = [
 ];
 
 export default function DashboardPage() {
-  const { ready, authenticated, user } = usePrivy();
+  const { ready: privyReady, authenticated, user } = usePrivy();
+  const { wallet, ready: walletReady } = useActiveWallet();
   const router = useRouter();
   const [guestUsername, setGuestUsername] = useState<string | null>(null);
   const [loadingGuest, setLoadingGuest] = useState(false);
 
   useEffect(() => {
-    if (!ready) return;
-    if (authenticated) return;
+    // Privy users: we show their GitHub handle; no on-chain lookup needed.
+    if (!walletReady || authenticated) return;
 
-    const guestKey = typeof window !== "undefined" ? localStorage.getItem("gengame_guest_key") : null;
-    if (!guestKey) return;
+    // Guest users: look up their on-chain username by session key address.
+    if (!wallet) return;
 
-    const wallet = getOrCreateGuestWallet();
     setLoadingGuest(true);
     getUserProfile(wallet.address)
       .then((profile) => {
@@ -42,15 +42,15 @@ export default function DashboardPage() {
         router.push("/sign-in/username");
       })
       .finally(() => setLoadingGuest(false));
-  }, [ready, authenticated, router]);
+  }, [walletReady, authenticated, wallet, router]);
 
-  const displayName = user?.github?.username
-    ? `@${user.github.username}`
-    : guestUsername
-    ? guestUsername
-    : null;
+  const displayName = authenticated
+    ? user?.github?.username
+      ? `@${user.github.username}`
+      : "player"
+    : guestUsername ?? null;
 
-  if (loadingGuest) {
+  if (!privyReady || loadingGuest) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="text-white">Loading...</div>

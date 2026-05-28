@@ -62,7 +62,7 @@ export default function UsernamePage() {
           disabled={loading || username.length < 3 || !ready}
           className="rounded-lg bg-indigo-600 py-3 font-semibold hover:bg-indigo-500 disabled:opacity-50"
         >
-          {loading ? "Registering..." : "Continue"}
+          {loading ? "Registering on-chain… this can take a few seconds" : "Continue"}
         </button>
       </form>
     </main>

@@ -1,6 +1,7 @@
 import pytest
 import json
 import sys
+import datetime
 
 # Subset of targets used to verify the contract picks from the real list
 EXPECTED_TARGETS = [
@@ -309,23 +310,25 @@ def test_state_both_submitted_to_judged(contract, direct_vm, full_match):
 
 # ── judge_match ───────────────────────────────────────────────────────────────
 
-def test_judge_match_requires_both_submitted(contract, direct_vm):
+def test_judge_match_requires_both_submitted_before_deadline(contract, direct_vm):
+    """BOTH_JOINED before deadline — judging not yet allowed."""
     direct_vm.sender = ALICE_ADDR
     match_id = contract.create_match()
     direct_vm.sender = BOB_ADDR
     contract.join_match(match_id)
-    with direct_vm.expect_revert("Both players must submit before judging"):
+    with direct_vm.expect_revert("Match is not in a judgeable state"):
         contract.judge_match(match_id)
 
 
-def test_judge_match_requires_both_not_just_one(contract, direct_vm):
+def test_judge_match_requires_both_not_just_one_before_deadline(contract, direct_vm):
+    """ONE_SUBMITTED before deadline — judging not yet allowed."""
     direct_vm.sender = ALICE_ADDR
     match_id = contract.create_match()
     direct_vm.sender = BOB_ADDR
     contract.join_match(match_id)
     direct_vm.sender = ALICE_ADDR
     contract.submit_prompt(match_id, "Alice prompt")
-    with direct_vm.expect_revert("Both players must submit before judging"):
+    with direct_vm.expect_revert("Match is not in a judgeable state"):
         contract.judge_match(match_id)
 
 
@@ -443,3 +446,182 @@ def test_get_matches_for_player(contract, direct_vm):
     assert int(id0) in bob_ids
     assert int(id1) in bob_ids
     assert int(id1) not in alice_ids
+
+
+# ── forfeit (ONE_SUBMITTED + deadline passed) ─────────────────────────────────
+
+@pytest.fixture
+def one_submitted_expired(contract, registry, direct_vm):
+    """Match where only Alice submitted before the deadline expired."""
+    direct_vm.sender = ALICE_ADDR
+    registry.register_user("Alice")
+    direct_vm.sender = BOB_ADDR
+    registry.register_user("Bob")
+
+    direct_vm.sender = ALICE_ADDR
+    match_id = contract.create_match()
+    direct_vm.sender = BOB_ADDR
+    contract.join_match(match_id)
+    direct_vm.sender = ALICE_ADDR
+    contract.submit_prompt(match_id, "Alice's prompt")
+
+    # Expire the deadline
+    direct_vm.warp((datetime.datetime.utcnow() + datetime.timedelta(seconds=7200)).isoformat() + "Z")
+    return match_id
+
+
+def test_forfeit_p1_wins_when_only_p1_submitted(contract, direct_vm, one_submitted_expired):
+    contract.judge_match(one_submitted_expired)
+    m = contract.get_match(one_submitted_expired)
+    assert int(m.state) == 4  # JUDGED
+    assert str(m.winner).lower() == ALICE_ADDR.lower()
+
+
+def test_forfeit_reasoning_mentions_deadline(contract, direct_vm, one_submitted_expired):
+    contract.judge_match(one_submitted_expired)
+    m = contract.get_match(one_submitted_expired)
+    assert "forfeit" in m.judge_reasoning.lower() or "deadline" in m.judge_reasoning.lower()
+
+
+def test_forfeit_p2_wins_when_only_p2_submitted(contract, registry, direct_vm):
+    direct_vm.sender = ALICE_ADDR
+    registry.register_user("Alice2")
+    direct_vm.sender = BOB_ADDR
+    registry.register_user("Bob2")
+
+    direct_vm.sender = ALICE_ADDR
+    match_id = contract.create_match()
+    direct_vm.sender = BOB_ADDR
+    contract.join_match(match_id)
+    direct_vm.sender = BOB_ADDR
+    contract.submit_prompt(match_id, "Bob's prompt")
+
+    direct_vm.warp((datetime.datetime.utcnow() + datetime.timedelta(seconds=7200)).isoformat() + "Z")
+    contract.judge_match(match_id)
+    m = contract.get_match(match_id)
+    assert str(m.winner).lower() == BOB_ADDR.lower()
+
+
+def test_forfeit_records_stats(contract, registry, direct_vm, one_submitted_expired):
+    captured = []
+
+    def _hook(vm, request):
+        if "PostMessage" not in request:
+            return None
+        msg = request["PostMessage"]
+        cd = msg.get("calldata", {})
+        if not isinstance(cd, dict):
+            return {"ok": None}
+        method = cd.get("method")
+        args = cd.get("args", [])
+        if method == "record_match" and len(args) >= 2:
+            registry.record_match(args[0], args[1])
+            captured.append((str(args[0]).lower(), bool(args[1])))
+        return {"ok": None}
+
+    direct_vm._gl_call_hook = _hook
+    contract.judge_match(one_submitted_expired)
+    direct_vm._gl_call_hook = None
+
+    alice_profile = registry.get_profile(ALICE_ADDR)
+    bob_profile = registry.get_profile(BOB_ADDR)
+    assert int(alice_profile.total_wins) == 1
+    assert int(bob_profile.total_wins) == 0
+    assert int(alice_profile.total_matches) == 1
+    assert int(bob_profile.total_matches) == 1
+
+
+# ── no-contest (BOTH_JOINED + deadline passed) ────────────────────────────────
+
+@pytest.fixture
+def both_joined_expired(contract, direct_vm):
+    direct_vm.sender = ALICE_ADDR
+    match_id = contract.create_match()
+    direct_vm.sender = BOB_ADDR
+    contract.join_match(match_id)
+    direct_vm.warp((datetime.datetime.utcnow() + datetime.timedelta(seconds=7200)).isoformat() + "Z")
+    return match_id
+
+
+def test_no_contest_state_is_judged(contract, direct_vm, both_joined_expired):
+    contract.judge_match(both_joined_expired)
+    m = contract.get_match(both_joined_expired)
+    assert int(m.state) == 4  # JUDGED
+
+
+def test_no_contest_winner_is_zero(contract, direct_vm, both_joined_expired):
+    contract.judge_match(both_joined_expired)
+    m = contract.get_match(both_joined_expired)
+    ZERO = "0x" + "0" * 40
+    assert str(m.winner).lower() == ZERO
+
+
+def test_no_contest_reasoning_set(contract, direct_vm, both_joined_expired):
+    contract.judge_match(both_joined_expired)
+    m = contract.get_match(both_joined_expired)
+    assert "no contest" in m.judge_reasoning.lower() or "neither" in m.judge_reasoning.lower()
+
+
+def test_no_contest_does_not_record_stats(contract, registry, direct_vm, both_joined_expired):
+    """No-contest must NOT call record_match for either player."""
+    direct_vm.sender = ALICE_ADDR
+    registry.register_user("AliceNC")
+    direct_vm.sender = BOB_ADDR
+    registry.register_user("BobNC")
+
+    called = []
+
+    def _hook(vm, request):
+        if "PostMessage" in request:
+            msg = request["PostMessage"]
+            cd = msg.get("calldata", {})
+            if isinstance(cd, dict) and cd.get("method") == "record_match":
+                called.append(cd)
+        return {"ok": None}
+
+    direct_vm._gl_call_hook = _hook
+    contract.judge_match(both_joined_expired)
+    direct_vm._gl_call_hook = None
+    assert len(called) == 0, "No-contest should not record any match stats"
+
+
+# ── cancel_match ──────────────────────────────────────────────────────────────
+
+@pytest.fixture
+def waiting_expired(contract, direct_vm):
+    direct_vm.sender = ALICE_ADDR
+    match_id = contract.create_match()
+    direct_vm.warp((datetime.datetime.utcnow() + datetime.timedelta(seconds=7200)).isoformat() + "Z")
+    return match_id
+
+
+def test_cancel_match_sets_cancelled_state(contract, direct_vm, waiting_expired):
+    direct_vm.sender = ALICE_ADDR
+    contract.cancel_match(waiting_expired)
+    m = contract.get_match(waiting_expired)
+    assert int(m.state) == 5  # CANCELLED
+
+
+def test_cancel_match_only_player1_can_cancel(contract, direct_vm, waiting_expired):
+    direct_vm.sender = BOB_ADDR
+    with direct_vm.expect_revert("Only Player 1 can cancel"):
+        contract.cancel_match(waiting_expired)
+
+
+def test_cancel_match_requires_waiting_for_p2_state(contract, direct_vm):
+    direct_vm.sender = ALICE_ADDR
+    match_id = contract.create_match()
+    direct_vm.sender = BOB_ADDR
+    contract.join_match(match_id)
+    direct_vm.warp((datetime.datetime.utcnow() + datetime.timedelta(seconds=7200)).isoformat() + "Z")
+    direct_vm.sender = ALICE_ADDR
+    with direct_vm.expect_revert("Can only cancel a match that is still waiting for Player 2"):
+        contract.cancel_match(match_id)
+
+
+def test_cancel_match_requires_deadline_passed(contract, direct_vm):
+    direct_vm.sender = ALICE_ADDR
+    match_id = contract.create_match()
+    # Deadline NOT passed yet
+    with direct_vm.expect_revert("Can only cancel after the deadline has passed"):
+        contract.cancel_match(match_id)

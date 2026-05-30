@@ -9,6 +9,8 @@ import {
   joinPromptWarsMatch,
   submitPrompt,
   judgeMatch,
+  cancelMatch,
+  devForceJudge,
   getUserProfile,
 } from "@/lib/genlayer";
 import type { Match } from "@/lib/genlayer";
@@ -50,6 +52,7 @@ export default function MatchPage() {
 
   const [match, setMatch] = useState<Match | null>(null);
   const [loading, setLoading] = useState(true);
+  const [nullCount, setNullCount] = useState(0);
   const [prompt, setPrompt] = useState("");
   const [txPending, setTxPending] = useState(false);
   const [error, setError] = useState("");
@@ -59,7 +62,14 @@ export default function MatchPage() {
 
   const fetchMatch = useCallback(async () => {
     const m = await getMatch(matchIdNum);
-    setMatch(m);
+    if (m) {
+      setMatch(m);
+      setNullCount(0);
+    } else {
+      // Only declare "not found" after 3 consecutive nulls (~9 s) so a freshly
+      // created match has time to become readable before we give up.
+      setNullCount((n) => n + 1);
+    }
     setLoading(false);
     return m;
   }, [matchIdNum]);
@@ -80,12 +90,13 @@ export default function MatchPage() {
     }
   }, [match]);
 
-  // Countdown for submission phase
+  const state = match ? Number(match.state) : -1;
+
+  // Countdown — shown for states 0, 1, 2 (any state that has a deadline)
   const deadlineUnix =
-    match && (Number(match.state) === 1 || Number(match.state) === 2)
-      ? Number(match.submission_deadline)
-      : null;
+    match && state <= 2 ? Number(match.submission_deadline) : null;
   const countdown = useCountdown(deadlineUnix);
+  const deadlinePassed = match ? Date.now() / 1000 > Number(match.submission_deadline) : false;
 
   async function doJoin() {
     if (!wallet) { setError("No wallet found."); return; }
@@ -127,6 +138,32 @@ export default function MatchPage() {
     }
   }
 
+  async function doCancel() {
+    if (!wallet) { setError("No wallet found."); return; }
+    setTxPending(true); setError("");
+    try {
+      await cancelMatch(matchIdNum, wallet);
+      await fetchMatch();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setTxPending(false);
+    }
+  }
+
+  async function doDevSkip() {
+    if (!wallet) { setError("No wallet found."); return; }
+    setTxPending(true); setError("");
+    try {
+      await devForceJudge(matchIdNum, wallet);
+      await fetchMatch();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setTxPending(false);
+    }
+  }
+
   function copyLink() {
     navigator.clipboard.writeText(window.location.href);
     setCopied(true);
@@ -134,6 +171,18 @@ export default function MatchPage() {
   }
 
   if (loading) {
+    return (
+      <AuthGuard>
+        <main className="flex min-h-screen items-center justify-center">
+          <p className="text-gray-400">Loading match…</p>
+        </main>
+      </AuthGuard>
+    );
+  }
+
+  // Keep showing "Loading…" until we've tried at least 3 times with no result,
+  // so a freshly created match isn't shown as "not found" on the first poll.
+  if (!match && (loading || nullCount < 3)) {
     return (
       <AuthGuard>
         <main className="flex min-h-screen items-center justify-center">
@@ -154,16 +203,17 @@ export default function MatchPage() {
     );
   }
 
-  const state = Number(match.state);
   const isPlayer1 = currentAddr?.toLowerCase() === match.player1?.toLowerCase();
   const isPlayer2 = currentAddr?.toLowerCase() === match.player2?.toLowerCase();
   const isPlayer = isPlayer1 || isPlayer2;
   const iAlreadySubmitted =
-    (isPlayer1 && match.player1_prompt !== "") ||
-    (isPlayer2 && match.player2_prompt !== "");
+    (isPlayer1 && !!match.player1_prompt) ||
+    (isPlayer2 && !!match.player2_prompt);
   const opponentSubmitted =
-    (isPlayer1 && match.player2_prompt !== "") ||
-    (isPlayer2 && match.player1_prompt !== "");
+    (isPlayer1 && !!match.player2_prompt) ||
+    (isPlayer2 && !!match.player1_prompt);
+  const iAmTheSubmitter =
+    (isPlayer1 && !!match.player1_prompt) || (isPlayer2 && !!match.player2_prompt);
 
   return (
     <AuthGuard>
@@ -173,22 +223,34 @@ export default function MatchPage() {
           <Link href="/prompt-wars" className="text-indigo-400 hover:underline text-sm">← Lobby</Link>
         </div>
 
-        <div className="mb-6 rounded-xl border border-gray-700 p-5">
-          <p className="mb-1 text-xs font-semibold uppercase tracking-widest text-gray-500">Target</p>
-          <p className="text-lg">{match.target_text}</p>
-        </div>
+        {/* Target — shown for all non-cancelled states */}
+        {state !== 5 && (
+          <div className="mb-6 rounded-xl border border-gray-700 p-5">
+            <p className="mb-1 text-xs font-semibold uppercase tracking-widest text-gray-500">Target</p>
+            <p className="text-lg">{match.target_text}</p>
+          </div>
+        )}
 
-        {/* Countdown — shown during submission phase */}
+        {/* Countdown + DEV skip button */}
         {countdown.display && (
-          <div className={`mb-4 text-sm font-semibold ${countdown.color}`}>
-            {countdown.display}
+          <div className="mb-4 flex items-center gap-4">
+            <span className={`text-sm font-semibold ${countdown.color}`}>{countdown.display}</span>
+            {process.env.NODE_ENV === "development" && isPlayer && !txPending && state < 4 && (
+              <button
+                onClick={doDevSkip}
+                disabled={txPending}
+                className="rounded border border-orange-700 bg-orange-950 px-2 py-0.5 text-xs text-orange-400 hover:bg-orange-900 disabled:opacity-40"
+              >
+                DEV: Skip to judging
+              </button>
+            )}
           </div>
         )}
 
         {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
 
         {/* STATE 0: WAITING_FOR_P2 */}
-        {state === 0 && (
+        {state === 0 && !deadlinePassed && (
           <div className="space-y-4">
             <p className="text-gray-400">Waiting for a second player to join.</p>
             <div className="flex items-center gap-3">
@@ -213,8 +275,28 @@ export default function MatchPage() {
           </div>
         )}
 
-        {/* STATES 1–2: submission phase */}
-        {(state === 1 || state === 2) && (
+        {/* STATE 0 + expired: no opponent joined */}
+        {state === 0 && deadlinePassed && (
+          <div className="space-y-4">
+            {isPlayer1 ? (
+              <>
+                <p className="text-gray-300">No opponent joined before the deadline.</p>
+                <button
+                  onClick={doCancel}
+                  disabled={txPending}
+                  className="rounded-lg bg-red-700 px-6 py-3 font-semibold hover:bg-red-600 disabled:opacity-50"
+                >
+                  {txPending ? "Cancelling…" : "Cancel match"}
+                </button>
+              </>
+            ) : (
+              <p className="text-gray-400">Match expired — no opponent joined in time.</p>
+            )}
+          </div>
+        )}
+
+        {/* STATES 1–2: submission phase, deadline NOT passed */}
+        {(state === 1 || state === 2) && !deadlinePassed && (
           <div className="space-y-4">
             {isPlayer ? (
               iAlreadySubmitted ? (
@@ -243,7 +325,7 @@ export default function MatchPage() {
                     </p>
                     <button
                       onClick={doSubmitPrompt}
-                      disabled={txPending || prompt.length === 0 || countdown.expired}
+                      disabled={txPending || prompt.length === 0}
                       className="rounded-lg bg-indigo-600 px-6 py-2 font-semibold hover:bg-indigo-500 disabled:opacity-50"
                     >
                       {txPending ? "Submitting…" : "Submit Prompt"}
@@ -253,6 +335,46 @@ export default function MatchPage() {
               )
             ) : (
               <p className="text-gray-400">You are not a player in this match.</p>
+            )}
+          </div>
+        )}
+
+        {/* STATE 2 + expired: ONE_SUBMITTED forfeit */}
+        {state === 2 && deadlinePassed && (
+          <div className="space-y-4">
+            {isPlayer ? (
+              iAmTheSubmitter ? (
+                <>
+                  <p className="text-amber-400">Opponent didn&apos;t submit before the deadline.</p>
+                  <button
+                    onClick={doJudge}
+                    disabled={txPending}
+                    className="rounded-lg bg-amber-600 px-6 py-3 font-semibold hover:bg-amber-500 disabled:opacity-50"
+                  >
+                    {txPending ? "Claiming win…" : "Claim win by forfeit"}
+                  </button>
+                </>
+              ) : (
+                <p className="text-gray-400">You missed the deadline. Your opponent can claim a forfeit win.</p>
+              )
+            ) : (
+              <p className="text-gray-400">The submission deadline has passed.</p>
+            )}
+          </div>
+        )}
+
+        {/* STATE 1 + expired: BOTH_JOINED, neither submitted — no-contest */}
+        {state === 1 && deadlinePassed && (
+          <div className="space-y-4">
+            <p className="text-gray-400">Match expired — neither player submitted before the deadline.</p>
+            {isPlayer && (
+              <button
+                onClick={doJudge}
+                disabled={txPending}
+                className="rounded-lg bg-gray-600 px-6 py-3 font-semibold hover:bg-gray-500 disabled:opacity-50"
+              >
+                {txPending ? "Marking no-contest…" : "Mark no-contest"}
+              </button>
             )}
           </div>
         )}
@@ -274,42 +396,68 @@ export default function MatchPage() {
         {/* STATE 4: JUDGED */}
         {state === 4 && (
           <div className="space-y-6">
-            <div className="rounded-xl border border-yellow-700 bg-yellow-900/20 p-5 text-center">
-              <p className="text-sm font-semibold uppercase tracking-widest text-yellow-400">Winner</p>
-              <p className="mt-1 text-xl font-bold">
-                {winnerUsername ?? match.winner?.slice(0, 10) + "…"}
-              </p>
-              {match.winner?.toLowerCase() === currentAddr?.toLowerCase() && (
-                <p className="mt-1 text-green-400">🎉 That&apos;s you!</p>
-              )}
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="rounded-xl border border-gray-700 p-4">
-                <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-gray-500">
-                  Player 1 prompt
-                </p>
-                <p className="mb-3 text-sm text-gray-300">{match.player1_prompt}</p>
-                <p className="text-xs font-semibold uppercase tracking-widest text-gray-500">Output</p>
-                <p className="mt-1 text-sm">{match.player1_output}</p>
+            {match.winner?.toLowerCase() === ZERO_ADDR.toLowerCase() ? (
+              <div className="rounded-xl border border-gray-600 bg-gray-800/40 p-5 text-center">
+                <p className="text-sm font-semibold uppercase tracking-widest text-gray-400">No Contest</p>
+                <p className="mt-1 text-gray-300">{match.judge_reasoning}</p>
               </div>
-              <div className="rounded-xl border border-gray-700 p-4">
-                <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-gray-500">
-                  Player 2 prompt
+            ) : (
+              <div className="rounded-xl border border-yellow-700 bg-yellow-900/20 p-5 text-center">
+                <p className="text-sm font-semibold uppercase tracking-widest text-yellow-400">Winner</p>
+                <p className="mt-1 text-xl font-bold">
+                  {winnerUsername ?? (match.winner ? `${match.winner.slice(0, 10)}…` : "Unknown")}
                 </p>
-                <p className="mb-3 text-sm text-gray-300">{match.player2_prompt}</p>
-                <p className="text-xs font-semibold uppercase tracking-widest text-gray-500">Output</p>
-                <p className="mt-1 text-sm">{match.player2_output}</p>
+                {match.winner?.toLowerCase() === currentAddr?.toLowerCase() && (
+                  <p className="mt-1 text-green-400">That&apos;s you!</p>
+                )}
               </div>
-            </div>
+            )}
 
-            <div className="rounded-xl border border-gray-700 p-4">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-gray-500">
-                AI Reasoning
-              </p>
-              <p className="text-sm text-gray-300">{match.judge_reasoning}</p>
-            </div>
+            {(match.player1_prompt || match.player2_prompt) && (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="rounded-xl border border-gray-700 p-4">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-gray-500">Player 1 prompt</p>
+                  <p className="mb-3 text-sm text-gray-300">{match.player1_prompt}</p>
+                  {match.player1_output && (
+                    <>
+                      <p className="text-xs font-semibold uppercase tracking-widest text-gray-500">Output</p>
+                      <p className="mt-1 text-sm">{match.player1_output}</p>
+                    </>
+                  )}
+                </div>
+                <div className="rounded-xl border border-gray-700 p-4">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-gray-500">Player 2 prompt</p>
+                  <p className="mb-3 text-sm text-gray-300">{match.player2_prompt}</p>
+                  {match.player2_output && (
+                    <>
+                      <p className="text-xs font-semibold uppercase tracking-widest text-gray-500">Output</p>
+                      <p className="mt-1 text-sm">{match.player2_output}</p>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
 
+            {match.judge_reasoning && match.winner?.toLowerCase() !== ZERO_ADDR.toLowerCase() && (
+              <div className="rounded-xl border border-gray-700 p-4">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-gray-500">AI Reasoning</p>
+                <p className="text-sm text-gray-300">{match.judge_reasoning}</p>
+              </div>
+            )}
+
+            <Link
+              href="/prompt-wars"
+              className="inline-block rounded-lg bg-indigo-600 px-6 py-2 font-semibold hover:bg-indigo-500"
+            >
+              Back to Lobby
+            </Link>
+          </div>
+        )}
+
+        {/* STATE 5: CANCELLED */}
+        {state === 5 && (
+          <div className="space-y-4 text-center">
+            <p className="text-gray-400">This match was cancelled.</p>
             <Link
               href="/prompt-wars"
               className="inline-block rounded-lg bg-indigo-600 px-6 py-2 font-semibold hover:bg-indigo-500"

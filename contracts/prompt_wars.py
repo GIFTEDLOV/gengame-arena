@@ -45,6 +45,7 @@ STATE_BOTH_JOINED = u8(1)
 STATE_ONE_SUBMITTED = u8(2)
 STATE_BOTH_SUBMITTED = u8(3)
 STATE_JUDGED = u8(4)
+STATE_CANCELLED = u8(5)
 
 
 @allow_storage
@@ -193,62 +194,148 @@ class PromptWars(gl.Contract):
             raise Exception("Match not found")
         match = self.matches[match_id]
 
-        if int(match.state) != 3:
-            raise Exception("Both players must submit before judging")
+        state = int(match.state)
+        now = int(datetime.datetime.now().timestamp())
+        deadline_passed = now > int(match.submission_deadline)
 
-        target = match.target_text
-        p1_prompt = match.player1_prompt
-        p2_prompt = match.player2_prompt
+        if state == 3:
+            # ── Normal path: both players submitted, run AI judgment ──────────
+            target = match.target_text
+            p1_prompt = match.player1_prompt
+            p2_prompt = match.player2_prompt
 
-        judge_prompt = (
-            f'You are judging a "Prompt Wars" match.\n\n'
-            f'Target task: "{target}"\n\n'
-            f'Player 1 submitted this prompt: "{p1_prompt}"\n'
-            f'Player 2 submitted this prompt: "{p2_prompt}"\n\n'
-            f'Instructions:\n'
-            f'1. Simulate executing each player\'s prompt as if you were an AI receiving it.\n'
-            f'2. Compare both simulated outputs to the target task.\n'
-            f'3. Determine which player\'s output is semantically closer to the target.\n\n'
-            f'Respond with valid JSON only:\n'
-            f'{{"player1_output": "what player 1\'s prompt produces", '
-            f'"player2_output": "what player 2\'s prompt produces", '
-            f'"winner": 1 or 2, '
-            f'"reasoning": "why the winner better matched the target"}}'
-        )
+            judge_prompt = (
+                f'You are judging a "Prompt Wars" match.\n\n'
+                f'Target task: "{target}"\n\n'
+                f'Player 1 submitted this prompt: "{p1_prompt}"\n'
+                f'Player 2 submitted this prompt: "{p2_prompt}"\n\n'
+                f'Instructions:\n'
+                f'1. Simulate executing each player\'s prompt as if you were an AI receiving it.\n'
+                f'2. Compare both simulated outputs to the target task.\n'
+                f'3. Determine which player\'s output is semantically closer to the target.\n\n'
+                f'Respond with valid JSON only:\n'
+                f'{{"player1_output": "what player 1\'s prompt produces", '
+                f'"player2_output": "what player 2\'s prompt produces", '
+                f'"winner": 1 or 2, '
+                f'"reasoning": "why the winner better matched the target"}}'
+            )
 
-        # eq_principle ensures all validators agree on the judgment
-        result = gl.eq_principle.prompt_comparative(
-            lambda: gl.nondet.exec_prompt(judge_prompt, response_format='json'),
-            "The winner should be the player whose prompt output is semantically closer to the target task"
-        )
+            result = gl.eq_principle.prompt_comparative(
+                lambda: gl.nondet.exec_prompt(judge_prompt, response_format='json'),
+                "The winner should be the player whose prompt output is semantically closer to the target task"
+            )
 
-        winner_num = int(result['winner'])
-        p1_output = str(result.get('player1_output', ''))
-        p2_output = str(result.get('player2_output', ''))
-        reasoning = str(result.get('reasoning', ''))
+            winner_num = int(result['winner'])
+            p1_output = str(result.get('player1_output', ''))
+            p2_output = str(result.get('player2_output', ''))
+            reasoning = str(result.get('reasoning', ''))
+            winner_address = match.player1 if winner_num == 1 else match.player2
 
-        winner_address = match.player1 if winner_num == 1 else match.player2
+            self.matches[match_id] = Match(
+                id=match.id,
+                target_text=match.target_text,
+                player1=match.player1,
+                player2=match.player2,
+                player1_prompt=match.player1_prompt,
+                player2_prompt=match.player2_prompt,
+                player1_output=p1_output,
+                player2_output=p2_output,
+                state=STATE_JUDGED,
+                winner=winner_address,
+                judge_reasoning=reasoning,
+                created_at=match.created_at,
+                submission_deadline=match.submission_deadline,
+            )
+
+            registry = gl.get_contract_at(self.user_registry_address)
+            registry.emit().record_match(match.player1, winner_num == 1)
+            registry.emit().record_match(match.player2, winner_num == 2)
+
+        elif state == 2 and deadline_passed:
+            # ── Forfeit: one player submitted, the other missed the deadline ──
+            # The submitting player wins; the other loses.
+            if match.player1_prompt != "":
+                winner_address = match.player1
+                winner_is_p1 = True
+            else:
+                winner_address = match.player2
+                winner_is_p1 = False
+
+            self.matches[match_id] = Match(
+                id=match.id,
+                target_text=match.target_text,
+                player1=match.player1,
+                player2=match.player2,
+                player1_prompt=match.player1_prompt,
+                player2_prompt=match.player2_prompt,
+                player1_output="",
+                player2_output="",
+                state=STATE_JUDGED,
+                winner=winner_address,
+                judge_reasoning="Opponent did not submit before the deadline. Win awarded by forfeit.",
+                created_at=match.created_at,
+                submission_deadline=match.submission_deadline,
+            )
+
+            registry = gl.get_contract_at(self.user_registry_address)
+            registry.emit().record_match(match.player1, winner_is_p1)
+            registry.emit().record_match(match.player2, not winner_is_p1)
+
+        elif state == 1 and deadline_passed:
+            # ── No-contest: both players joined but neither submitted ─────────
+            # No winner is declared; neither player wins or loses.
+            self.matches[match_id] = Match(
+                id=match.id,
+                target_text=match.target_text,
+                player1=match.player1,
+                player2=match.player2,
+                player1_prompt="",
+                player2_prompt="",
+                player1_output="",
+                player2_output="",
+                state=STATE_JUDGED,
+                winner=ZERO_ADDR,
+                judge_reasoning="Neither player submitted before the deadline. No contest — no stats recorded.",
+                created_at=match.created_at,
+                submission_deadline=match.submission_deadline,
+            )
+            # No record_match calls — no-contest does not count for either player.
+
+        else:
+            raise Exception("Match is not in a judgeable state")
+
+    @gl.public.write
+    def cancel_match(self, match_id: u64) -> None:
+        """Cancel a match that never found an opponent (Player 1 only, after deadline)."""
+        caller = gl.message.sender_address
+        if match_id not in self.matches:
+            raise Exception("Match not found")
+        match = self.matches[match_id]
+
+        if match.player1 != caller:
+            raise Exception("Only Player 1 can cancel this match")
+        if int(match.state) != 0:
+            raise Exception("Can only cancel a match that is still waiting for Player 2")
+
+        now = int(datetime.datetime.now().timestamp())
+        if now <= int(match.submission_deadline):
+            raise Exception("Can only cancel after the deadline has passed")
 
         self.matches[match_id] = Match(
             id=match.id,
             target_text=match.target_text,
             player1=match.player1,
             player2=match.player2,
-            player1_prompt=match.player1_prompt,
-            player2_prompt=match.player2_prompt,
-            player1_output=p1_output,
-            player2_output=p2_output,
-            state=STATE_JUDGED,
-            winner=winner_address,
-            judge_reasoning=reasoning,
+            player1_prompt="",
+            player2_prompt="",
+            player1_output="",
+            player2_output="",
+            state=STATE_CANCELLED,
+            winner=ZERO_ADDR,
+            judge_reasoning="",
             created_at=match.created_at,
             submission_deadline=match.submission_deadline,
         )
-
-        # Cross-contract: record match outcome for both players (PostMessage, outside eq_principle)
-        registry = gl.get_contract_at(self.user_registry_address)
-        registry.emit().record_match(match.player1, winner_num == 1)
-        registry.emit().record_match(match.player2, winner_num == 2)
 
     @gl.public.view
     def get_match(self, match_id: u64) -> Optional[Match]:

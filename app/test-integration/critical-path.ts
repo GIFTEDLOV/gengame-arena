@@ -178,7 +178,7 @@ async function main() {
 
   // Step 7
   try {
-    const result = await createPromptWarsMatch(walletA);
+    const result = await createPromptWarsMatch(walletA, 2);  // 2-player match
     matchId = result.matchId;
     if (typeof matchId !== "number" || isNaN(matchId)) {
       fail(7, `createPromptWarsMatch returns numeric matchId`, `got: ${matchId}`);
@@ -194,14 +194,14 @@ async function main() {
     const match = await getMatch(matchId);
     if (!match) {
       fail(8, `getMatch(${matchId}) exists`, "null");
-    } else if (match.player1.toLowerCase() !== walletA.address.toLowerCase()) {
-      fail(8, `getMatch.player1 === walletA.address`, `got: ${match.player1}`, match);
+    } else if (match.players[0]?.toLowerCase() !== walletA.address.toLowerCase()) {
+      fail(8, `getMatch.players[0] === walletA.address`, `got: ${match.players[0]}`, match);
     } else if (!match.target_text) {
       fail(8, `getMatch.target_text non-empty`, `got: "${match.target_text}"`, match);
     } else {
       pass(
         8,
-        `getMatch(${matchId}): player1=✓ target="${match.target_text.slice(0, 40)}…"`
+        `getMatch(${matchId}): players[0]=✓ target="${match.target_text.slice(0, 40)}…"`
       );
     }
   } catch (e) {
@@ -219,10 +219,10 @@ async function main() {
   // Step 10
   try {
     const match = await getMatch(matchId);
-    if (!match || match.player2.toLowerCase() !== walletB.address.toLowerCase()) {
-      fail(10, `getMatch.player2 === walletB.address`, `got: ${match?.player2}`, match);
+    if (!match || match.players[1]?.toLowerCase() !== walletB.address.toLowerCase()) {
+      fail(10, `getMatch.players[1] === walletB.address`, `got: ${match?.players[1]}`, match);
     } else {
-      pass(10, `getMatch(${matchId}).player2 === walletB.address`);
+      pass(10, `getMatch(${matchId}).players[1] === walletB.address`);
     }
   } catch (e) {
     fail(10, `getMatch(${matchId}) after join`, e);
@@ -257,23 +257,23 @@ async function main() {
   try {
     let match = await getMatch(matchId);
     let attempts = 0;
-    while (attempts < 20 && Number(match?.state ?? -1) !== 4) {
+    while (attempts < 20 && Number(match?.state ?? -1) !== 2) {
       await sleep(3000);
       match = await getMatch(matchId);
       attempts++;
     }
-    const ZERO = "0x" + "0".repeat(40);
     const state = Number(match?.state ?? -1);
-    if (state !== 4) {
-      fail(14, `getMatch.state === JUDGED(4)`, `got: ${state}`, match);
-    } else if (!match?.winner || match.winner.toLowerCase() === ZERO) {
-      fail(14, `getMatch.winner is a real player`, `got: ${match?.winner}`, match);
-    } else if (!match.judge_reasoning) {
+    const winnerAddr = match?.ranking[0] ?? "";
+    if (state !== 2) {  // STATE_JUDGED = 2
+      fail(14, `getMatch.state === JUDGED(2)`, `got: ${state}`, match);
+    } else if (!winnerAddr) {
+      fail(14, `getMatch.ranking[0] is a real player`, `got: empty ranking`, match);
+    } else if (!match!.judge_reasoning) {
       fail(14, `getMatch.judge_reasoning non-empty`, `got: "${match?.judge_reasoning}"`, match);
     } else {
       pass(
         14,
-        `getMatch: state=JUDGED winner=${match.winner.slice(0, 10)}… reasoning="${match.judge_reasoning.slice(0, 40)}…"`
+        `getMatch: state=JUDGED winner=${winnerAddr.slice(0, 10)}… reasoning="${match!.judge_reasoning.slice(0, 40)}…"`
       );
     }
   } catch (e) {

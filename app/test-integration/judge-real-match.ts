@@ -80,7 +80,7 @@ async function main() {
 
   // ── Create + join ─────────────────────────────────────────────────────────
   console.log("Creating match...");
-  const { matchId } = await createPromptWarsMatch(walletA);
+  const { matchId } = await createPromptWarsMatch(walletA, 2);  // 2-player match
   console.log(`Match ID: ${matchId}`);
 
   const matchAfterCreate = await getMatch(matchId);
@@ -116,36 +116,33 @@ async function main() {
   if (!result) throw new Error("Match disappeared after judging");
 
   const state = Number(result.state);
-  if (state !== 4) {
-    console.error(`FAIL: expected state=JUDGED(4), got ${state}`);
+  if (state !== 2) {  // STATE_JUDGED = 2 in N-player contract
+    console.error(`FAIL: expected state=JUDGED(2), got ${state}`);
     console.error("Raw match:", result);
     process.exit(1);
   }
 
-  const ZERO = "0x" + "0".repeat(40);
+  const winnerAddr = result.ranking[0] ?? "";
   const winnerIs =
-    result.winner.toLowerCase() === walletA.address.toLowerCase()
+    winnerAddr.toLowerCase() === walletA.address.toLowerCase()
       ? "Player A"
-      : result.winner.toLowerCase() === walletB.address.toLowerCase()
+      : winnerAddr.toLowerCase() === walletB.address.toLowerCase()
       ? "Player B"
-      : result.winner.toLowerCase() === ZERO
-      ? "ZERO (no winner?)"
       : "Unknown";
 
-  // Look up winner's username
-  const winnerProfile = await getUserProfile(result.winner);
+  const winnerProfile = winnerAddr ? await getUserProfile(winnerAddr) : null;
 
   console.log("=".repeat(60));
   console.log("MATCH RESULTS");
   console.log("=".repeat(60));
   console.log(`Target:   ${target}`);
   console.log(`\nPlayer A (${walletA.address.slice(0, 10)}…)`);
-  console.log(`  Prompt:  ${result.player1_prompt}`);
-  console.log(`  Output:  ${result.player1_output}`);
+  console.log(`  Prompt:  ${result.prompts[0]}`);
+  console.log(`  Output:  ${result.outputs[0]}`);
   console.log(`\nPlayer B (${walletB.address.slice(0, 10)}…)`);
-  console.log(`  Prompt:  ${result.player2_prompt}`);
-  console.log(`  Output:  ${result.player2_output}`);
-  console.log(`\nWinner:   ${winnerIs} (${result.winner.slice(0, 10)}… / ${winnerProfile?.username ?? "unknown"})`);
+  console.log(`  Prompt:  ${result.prompts[1]}`);
+  console.log(`  Output:  ${result.outputs[1]}`);
+  console.log(`\nWinner:   ${winnerIs} (${winnerAddr.slice(0, 10)}… / ${winnerProfile?.username ?? "unknown"})`);
   console.log("\n" + "=".repeat(60));
   console.log("=== AI REASONING ===");
   console.log("=".repeat(60));

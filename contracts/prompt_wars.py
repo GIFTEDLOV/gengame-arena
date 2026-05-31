@@ -40,14 +40,40 @@ TARGETS = [
 ]
 
 ZERO_ADDR = Address(bytes(20))
-DEADLINE_UNSET = u64(0)  # Sentinel: timer hasn't started yet (match not full)
+DEADLINE_UNSET = u64(0)   # Timer hasn't started yet (match not full / not started)
+MAX_PLAYERS_CAP = 50      # Hard upper limit on match size
 
-STATE_WAITING_FOR_P2 = u8(0)
-STATE_BOTH_JOINED = u8(1)
-STATE_ONE_SUBMITTED = u8(2)
-STATE_BOTH_SUBMITTED = u8(3)
-STATE_JUDGED = u8(4)
-STATE_CANCELLED = u8(5)
+# Match states
+STATE_WAITING   = u8(0)  # Created, accepting joins, no timer yet
+STATE_FULL      = u8(1)  # All slots filled OR manually started; 5-min clock running
+STATE_JUDGED    = u8(2)
+STATE_CANCELLED = u8(3)
+
+
+# ── JSON helpers for variable-length arrays ───────────────────────────────────
+# GenLayer's storage system requires scalar types (str, int, Address…) or
+# TreeMap/DynArray for collections. DynArray can't be constructed with initial
+# values in write methods, so we serialise player/prompt lists as JSON strings
+# and parse them back at the top of every method that needs them.
+
+def _addrs_to_json(addrs: list) -> str:
+    return _json.dumps([str(a) for a in addrs])
+
+
+def _json_to_addrs(s: str) -> list:
+    if not s or s == "[]":
+        return []
+    return [Address(a) for a in _json.loads(s)]
+
+
+def _strs_to_json(strings: list) -> str:
+    return _json.dumps(list(strings))
+
+
+def _json_to_strs(s: str) -> list:
+    if not s or s == "[]":
+        return []
+    return _json.loads(s)
 
 
 @allow_storage
@@ -55,17 +81,17 @@ STATE_CANCELLED = u8(5)
 class Match:
     id: u64
     target_text: str
-    player1: Address
-    player2: Address
-    player1_prompt: str
-    player2_prompt: str
-    player1_output: str
-    player2_output: str
+    max_players: u32
+    # Variable-length arrays stored as JSON strings (DynArray construction
+    # with initial values is not supported; str is the safe storage primitive).
+    players_json: str    # [hex_addr, …] ordered by join time
+    prompts_json: str    # prompts[i] belongs to players[i]; "" = not submitted
+    outputs_json: str    # simulated LLM outputs after judging
+    ranking_json: str    # [hex_addr, …] ranking[0] = winner; "" until JUDGED
     state: u8
-    winner: Address
     judge_reasoning: str
     created_at: u64
-    submission_deadline: u64
+    submission_deadline: u64  # DEADLINE_UNSET until match is full/started
 
 
 class PromptWars(gl.Contract):
@@ -79,12 +105,54 @@ class PromptWars(gl.Contract):
             user_registry_address = Address(user_registry_address)
         self.user_registry_address = user_registry_address
 
+    # ── private helpers ───────────────────────────────────────────────────────
+
+    def _index_of(self, players: list, addr: Address) -> int:
+        for i, p in enumerate(players):
+            if p == addr:
+                return i
+        return -1
+
+    def _save_match(self, match_id: u64, m: Match) -> None:
+        self.matches[match_id] = m
+
+    def _start_clock(
+        self,
+        match_id: u64,
+        match: Match,
+        players: list,
+        prompts: list,
+        outputs: list,
+        ranking: list,
+    ) -> None:
+        """Transition to FULL and start the 5-minute submission clock."""
+        now = int(datetime.datetime.now().timestamp())
+        self._save_match(match_id, Match(
+            id=match.id,
+            target_text=match.target_text,
+            max_players=match.max_players,
+            players_json=_addrs_to_json(players),
+            prompts_json=_strs_to_json(prompts),
+            outputs_json=_strs_to_json(outputs),
+            ranking_json=_addrs_to_json(ranking),
+            state=STATE_FULL,
+            judge_reasoning=match.judge_reasoning,
+            created_at=match.created_at,
+            submission_deadline=u64(now + 300),
+        ))
+
+    # ── write methods ─────────────────────────────────────────────────────────
+
     @gl.public.write
-    def create_match(self) -> u64:
+    def create_match(self, max_players: u32 = u32(50)) -> u64:
+        if int(max_players) < 2:
+            raise Exception("max_players must be at least 2")
+        if int(max_players) > MAX_PLAYERS_CAP:
+            raise Exception("max_players cannot exceed 50")
+
         caller = gl.message.sender_address
         now = int(datetime.datetime.now().timestamp())
 
-        # Deterministic target selection from caller address + timestamp
         seed_bytes = hashlib.sha256(
             caller.as_bytes + now.to_bytes(8, 'big')
         ).digest()
@@ -92,23 +160,19 @@ class PromptWars(gl.Contract):
         target_text = TARGETS[target_idx]
 
         match_id = self.next_match_id
-
-        self.matches[match_id] = Match(
+        self._save_match(match_id, Match(
             id=match_id,
             target_text=target_text,
-            player1=caller,
-            player2=ZERO_ADDR,
-            player1_prompt="",
-            player2_prompt="",
-            player1_output="",
-            player2_output="",
-            state=STATE_WAITING_FOR_P2,
-            winner=ZERO_ADDR,
+            max_players=max_players,
+            players_json=_addrs_to_json([caller]),
+            prompts_json=_strs_to_json([""]),
+            outputs_json=_strs_to_json([""]),
+            ranking_json="[]",
+            state=STATE_WAITING,
             judge_reasoning="",
             created_at=u64(now),
-            submission_deadline=DEADLINE_UNSET,  # timer starts when match is full
-        )
-
+            submission_deadline=DEADLINE_UNSET,
+        ))
         self.next_match_id = u64(int(match_id) + 1)
         return match_id
 
@@ -118,27 +182,64 @@ class PromptWars(gl.Contract):
         if match_id not in self.matches:
             raise Exception("Match not found")
         match = self.matches[match_id]
-        if int(match.state) != 0:
-            raise Exception("Match already has two players")
-        if match.player1 == caller:
-            raise Exception("Cannot join your own match")
 
-        now = int(datetime.datetime.now().timestamp())
-        self.matches[match_id] = Match(
-            id=match.id,
-            target_text=match.target_text,
-            player1=match.player1,
-            player2=caller,
-            player1_prompt=match.player1_prompt,
-            player2_prompt=match.player2_prompt,
-            player1_output=match.player1_output,
-            player2_output=match.player2_output,
-            state=STATE_BOTH_JOINED,
-            winner=match.winner,
-            judge_reasoning=match.judge_reasoning,
-            created_at=match.created_at,
-            submission_deadline=u64(now + 300),  # 5-min clock starts when match is full
-        )
+        if int(match.state) != int(STATE_WAITING):
+            raise Exception("Match is not open for joining")
+
+        players = _json_to_addrs(match.players_json)
+        prompts = _json_to_strs(match.prompts_json)
+        outputs = _json_to_strs(match.outputs_json)
+        ranking = _json_to_addrs(match.ranking_json)
+
+        if len(players) >= int(match.max_players):
+            raise Exception("Match is full")
+        if self._index_of(players, caller) >= 0:
+            raise Exception("Already joined this match")
+
+        players.append(caller)
+        prompts.append("")
+        outputs.append("")
+
+        if len(players) >= int(match.max_players):
+            # Reached capacity: start the clock
+            self._start_clock(match_id, match, players, prompts, outputs, ranking)
+        else:
+            self._save_match(match_id, Match(
+                id=match.id,
+                target_text=match.target_text,
+                max_players=match.max_players,
+                players_json=_addrs_to_json(players),
+                prompts_json=_strs_to_json(prompts),
+                outputs_json=_strs_to_json(outputs),
+                ranking_json=match.ranking_json,
+                state=match.state,
+                judge_reasoning=match.judge_reasoning,
+                created_at=match.created_at,
+                submission_deadline=match.submission_deadline,
+            ))
+
+    @gl.public.write
+    def start_match(self, match_id: u64) -> None:
+        """Any joined player can start the match early (before slots fill up)."""
+        caller = gl.message.sender_address
+        if match_id not in self.matches:
+            raise Exception("Match not found")
+        match = self.matches[match_id]
+
+        if int(match.state) != int(STATE_WAITING):
+            raise Exception("Match has already started or is finished")
+
+        players = _json_to_addrs(match.players_json)
+        prompts = _json_to_strs(match.prompts_json)
+        outputs = _json_to_strs(match.outputs_json)
+        ranking = _json_to_addrs(match.ranking_json)
+
+        if len(players) < 2:
+            raise Exception("Need at least 2 players to start")
+        if self._index_of(players, caller) < 0:
+            raise Exception("Only a joined player can start the match")
+
+        self._start_clock(match_id, match, players, prompts, outputs, ranking)
 
     @gl.public.write
     def submit_prompt(self, match_id: u64, prompt: str) -> None:
@@ -147,21 +248,15 @@ class PromptWars(gl.Contract):
             raise Exception("Match not found")
         match = self.matches[match_id]
 
-        is_player1 = match.player1 == caller
-        is_player2 = match.player2 == caller
-
-        if not (is_player1 or is_player2):
-            raise Exception("Not a player in this match")
-
-        state = int(match.state)
-        if state < 1 or state > 2:
+        if int(match.state) != int(STATE_FULL):
             raise Exception("Match is not in submission phase")
 
-        if is_player1 and match.player1_prompt != "":
-            raise Exception("Already submitted")
-        if is_player2 and match.player2_prompt != "":
-            raise Exception("Already submitted")
+        players = _json_to_addrs(match.players_json)
+        prompts = _json_to_strs(match.prompts_json)
 
+        idx = self._index_of(players, caller)
+        if idx < 0:
+            raise Exception("Not a player in this match")
         if len(prompt) > 500:
             raise Exception("Prompt exceeds 500 characters")
 
@@ -169,27 +264,20 @@ class PromptWars(gl.Contract):
         if int(match.submission_deadline) != 0 and now > int(match.submission_deadline):
             raise Exception("Submission deadline passed")
 
-        new_p1_prompt = prompt if is_player1 else match.player1_prompt
-        new_p2_prompt = prompt if is_player2 else match.player2_prompt
-
-        both_in = new_p1_prompt != "" and new_p2_prompt != ""
-        new_state = STATE_BOTH_SUBMITTED if both_in else STATE_ONE_SUBMITTED
-
-        self.matches[match_id] = Match(
+        prompts[idx] = prompt
+        self._save_match(match_id, Match(
             id=match.id,
             target_text=match.target_text,
-            player1=match.player1,
-            player2=match.player2,
-            player1_prompt=new_p1_prompt,
-            player2_prompt=new_p2_prompt,
-            player1_output=match.player1_output,
-            player2_output=match.player2_output,
-            state=new_state,
-            winner=match.winner,
+            max_players=match.max_players,
+            players_json=match.players_json,
+            prompts_json=_strs_to_json(prompts),
+            outputs_json=match.outputs_json,
+            ranking_json=match.ranking_json,
+            state=match.state,
             judge_reasoning=match.judge_reasoning,
             created_at=match.created_at,
             submission_deadline=match.submission_deadline,
-        )
+        ))
 
     @gl.public.write
     def judge_match(self, match_id: u64) -> None:
@@ -197,156 +285,156 @@ class PromptWars(gl.Contract):
             raise Exception("Match not found")
         match = self.matches[match_id]
 
-        state = int(match.state)
+        if int(match.state) != int(STATE_FULL):
+            raise Exception("Match is not in a judgeable state")
+
+        players = _json_to_addrs(match.players_json)
+        prompts = _json_to_strs(match.prompts_json)
+        n = len(players)
+
         now = int(datetime.datetime.now().timestamp())
-        deadline_passed = now > int(match.submission_deadline)
+        deadline_passed = int(match.submission_deadline) != 0 and now > int(match.submission_deadline)
+        submitted = [p != "" for p in prompts]
+        num_submitted = sum(submitted)
 
-        if state == 3:
-            # ── Normal path: both players submitted, run AI judgment ──────────
-            target = match.target_text
-            p1_prompt = match.player1_prompt
-            p2_prompt = match.player2_prompt
+        if not deadline_passed and num_submitted < n:
+            raise Exception("Waiting for all players to submit or deadline to pass")
 
-            judge_prompt = (
-                f'You are judging a "Prompt Wars" match.\n\n'
-                f'Target task: "{target}"\n\n'
-                f'Player 1 submitted this prompt: "{p1_prompt}"\n'
-                f'Player 2 submitted this prompt: "{p2_prompt}"\n\n'
-                f'Instructions:\n'
-                f'1. Simulate executing each player\'s prompt as if you were an AI receiving it.\n'
-                f'2. Compare both simulated outputs to the target task.\n'
-                f'3. Determine which player\'s output is semantically closer to the target.\n\n'
-                f'Respond with valid JSON only:\n'
-                f'{{"player1_output": "what player 1\'s prompt produces", '
-                f'"player2_output": "what player 2\'s prompt produces", '
-                f'"winner": 1 or 2, '
-                f'"reasoning": "why the winner better matched the target"}}'
-            )
-
-            # Use prompt_comparative with a principle that only tests the winner
-            # number so validators agree even when their simulated player outputs
-            # or reasoning differ in wording.
-            result = gl.eq_principle.prompt_comparative(
-                lambda: gl.nondet.exec_prompt(judge_prompt, response_format='json'),
-                'The "winner" field value (integer 1 or 2) is numerically identical in both JSON outputs',
-            )
-
-            # greyboxing.lua returns a JSON string (not a parsed dict) when it strips
-            # code fences via format='text'. Parse it here if needed.
-            if isinstance(result, str):
-                result = _json.loads(result)
-
-            winner_num = int(result['winner'])
-            p1_output = str(result.get('player1_output', ''))
-            p2_output = str(result.get('player2_output', ''))
-            reasoning = str(result.get('reasoning', ''))
-            winner_address = match.player1 if winner_num == 1 else match.player2
-
-            self.matches[match_id] = Match(
+        # ── No-contest ──────────────────────────────────────────────────────
+        if num_submitted == 0:
+            self._save_match(match_id, Match(
                 id=match.id,
                 target_text=match.target_text,
-                player1=match.player1,
-                player2=match.player2,
-                player1_prompt=match.player1_prompt,
-                player2_prompt=match.player2_prompt,
-                player1_output=p1_output,
-                player2_output=p2_output,
+                max_players=match.max_players,
+                players_json=match.players_json,
+                prompts_json=match.prompts_json,
+                outputs_json=_strs_to_json([""] * n),
+                ranking_json="[]",
                 state=STATE_JUDGED,
-                winner=winner_address,
-                judge_reasoning=reasoning,
+                judge_reasoning="No players submitted before the deadline. No contest — no stats recorded.",
                 created_at=match.created_at,
                 submission_deadline=match.submission_deadline,
-            )
+            ))
+            return
 
-            registry = gl.get_contract_at(self.user_registry_address)
-            registry.emit().record_match(match.player1, winner_num == 1)
-            registry.emit().record_match(match.player2, winner_num == 2)
-
-        elif state == 2 and deadline_passed:
-            # ── Forfeit: one player submitted, the other missed the deadline ──
-            # The submitting player wins; the other loses.
-            if match.player1_prompt != "":
-                winner_address = match.player1
-                winner_is_p1 = True
-            else:
-                winner_address = match.player2
-                winner_is_p1 = False
-
-            self.matches[match_id] = Match(
+        # ── Two-player forfeit (only 1 of 2 submitted) ──────────────────────
+        if num_submitted == 1 and n == 2:
+            winner_idx = 0 if submitted[0] else 1
+            loser_idx = 1 - winner_idx
+            ranking = [players[winner_idx], players[loser_idx]]
+            self._save_match(match_id, Match(
                 id=match.id,
                 target_text=match.target_text,
-                player1=match.player1,
-                player2=match.player2,
-                player1_prompt=match.player1_prompt,
-                player2_prompt=match.player2_prompt,
-                player1_output="",
-                player2_output="",
+                max_players=match.max_players,
+                players_json=match.players_json,
+                prompts_json=match.prompts_json,
+                outputs_json=_strs_to_json([""] * n),
+                ranking_json=_addrs_to_json(ranking),
                 state=STATE_JUDGED,
-                winner=winner_address,
                 judge_reasoning="Opponent did not submit before the deadline. Win awarded by forfeit.",
                 created_at=match.created_at,
                 submission_deadline=match.submission_deadline,
-            )
-
+            ))
             registry = gl.get_contract_at(self.user_registry_address)
-            registry.emit().record_match(match.player1, winner_is_p1)
-            registry.emit().record_match(match.player2, not winner_is_p1)
+            registry.emit().record_match(players[winner_idx], True)
+            registry.emit().record_match(players[loser_idx], False)
+            return
 
-        elif state == 1 and deadline_passed:
-            # ── No-contest: both players joined but neither submitted ─────────
-            # No winner is declared; neither player wins or loses.
-            self.matches[match_id] = Match(
-                id=match.id,
-                target_text=match.target_text,
-                player1=match.player1,
-                player2=match.player2,
-                player1_prompt="",
-                player2_prompt="",
-                player1_output="",
-                player2_output="",
-                state=STATE_JUDGED,
-                winner=ZERO_ADDR,
-                judge_reasoning="Neither player submitted before the deadline. No contest — no stats recorded.",
-                created_at=match.created_at,
-                submission_deadline=match.submission_deadline,
-            )
-            # No record_match calls — no-contest does not count for either player.
+        # ── AI judging: rank all players ────────────────────────────────────
+        target = match.target_text
+        prompt_lines = []
+        for i in range(n):
+            p = prompts[i]
+            prompt_lines.append(f"Player {i + 1}: \"{p}\"" if p else f"Player {i + 1}: [did not submit]")
+        prompts_block = "\n".join(prompt_lines)
 
-        else:
-            raise Exception("Match is not in a judgeable state")
+        judge_prompt = (
+            f'You are judging a "Prompt Wars" match with {n} players.\n\n'
+            f'Target task: "{target}"\n\n'
+            f'Player submissions:\n{prompts_block}\n\n'
+            f'Instructions:\n'
+            f'1. Simulate running each submitted prompt through an AI.\n'
+            f'2. Compare every simulated output against the target task.\n'
+            f'3. Rank all {n} players from best to worst. Players who did not submit rank last.\n\n'
+            f'Respond with valid JSON only (no markdown fences):\n'
+            f'{{"ranking": [1-based player numbers best first], '
+            f'"outputs": {{"1": "output for player 1", "2": "output for player 2", ...}}, '
+            f'"reasoning": "brief explanation of ranking"}}'
+        )
+
+        result = gl.eq_principle.prompt_comparative(
+            lambda: gl.nondet.exec_prompt(judge_prompt, response_format='json'),
+            'The "ranking" list (the ordered sequence of 1-based player numbers) is identical in both JSON outputs',
+        )
+
+        if isinstance(result, str):
+            result = _json.loads(result)
+
+        ranking_nums = [int(x) for x in result['ranking']]
+        outputs_map = {str(k): str(v) for k, v in result.get('outputs', {}).items()}
+        reasoning = str(result.get('reasoning', ''))
+
+        new_outputs = [""] * n
+        for i in range(n):
+            new_outputs[i] = outputs_map.get(str(i + 1), "")
+
+        ranking_addrs = []
+        for num in ranking_nums:
+            idx = num - 1
+            if 0 <= idx < n:
+                ranking_addrs.append(players[idx])
+
+        self._save_match(match_id, Match(
+            id=match.id,
+            target_text=match.target_text,
+            max_players=match.max_players,
+            players_json=match.players_json,
+            prompts_json=match.prompts_json,
+            outputs_json=_strs_to_json(new_outputs),
+            ranking_json=_addrs_to_json(ranking_addrs),
+            state=STATE_JUDGED,
+            judge_reasoning=reasoning,
+            created_at=match.created_at,
+            submission_deadline=match.submission_deadline,
+        ))
+
+        registry = gl.get_contract_at(self.user_registry_address)
+        for rank_i, addr in enumerate(ranking_addrs):
+            registry.emit().record_match(addr, rank_i == 0)
 
     @gl.public.write
     def cancel_match(self, match_id: u64) -> None:
-        """Cancel a match that never found an opponent (Player 1 only, after deadline)."""
+        """Cancel a match still waiting for players (creator only, 5+ min after create)."""
         caller = gl.message.sender_address
         if match_id not in self.matches:
             raise Exception("Match not found")
         match = self.matches[match_id]
 
-        if match.player1 != caller:
-            raise Exception("Only Player 1 can cancel this match")
-        if int(match.state) != 0:
-            raise Exception("Can only cancel a match that is still waiting for Player 2")
+        players = _json_to_addrs(match.players_json)
+        if players[0] != caller:
+            raise Exception("Only the match creator can cancel")
+        if int(match.state) != int(STATE_WAITING):
+            raise Exception("Can only cancel a match that is still waiting for players")
 
         now = int(datetime.datetime.now().timestamp())
         if now <= int(match.created_at) + 300:
             raise Exception("Can only cancel after the deadline has passed")
 
-        self.matches[match_id] = Match(
+        self._save_match(match_id, Match(
             id=match.id,
             target_text=match.target_text,
-            player1=match.player1,
-            player2=match.player2,
-            player1_prompt="",
-            player2_prompt="",
-            player1_output="",
-            player2_output="",
+            max_players=match.max_players,
+            players_json=match.players_json,
+            prompts_json=match.prompts_json,
+            outputs_json=match.outputs_json,
+            ranking_json=match.ranking_json,
             state=STATE_CANCELLED,
-            winner=ZERO_ADDR,
             judge_reasoning="",
             created_at=match.created_at,
             submission_deadline=match.submission_deadline,
-        )
+        ))
+
+    # ── view methods ──────────────────────────────────────────────────────────
 
     @gl.public.view
     def get_match(self, match_id: u64) -> Optional[Match]:
@@ -371,6 +459,7 @@ class PromptWars(gl.Contract):
         result = []
         for i in range(int(self.next_match_id)):
             match = self.matches[u64(i)]
-            if match.player1 == player or match.player2 == player:
+            players = _json_to_addrs(match.players_json)
+            if self._index_of(players, player) >= 0:
                 result.append(u64(i))
         return result

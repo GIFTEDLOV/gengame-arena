@@ -15,7 +15,7 @@ export const USER_REGISTRY_ADDRESS =
 
 export const PROMPT_WARS_ADDRESS =
   process.env.NEXT_PUBLIC_PROMPT_WARS_ADDRESS ??
-  "0x43440067134D881CCb4C94A8faF3aAF79df5Df09";
+  "0x48e610a2dB8ba246fdfBbaa50eaa91DCd5D45131";
 
 const RPC_URL =
   process.env.NEXT_PUBLIC_GENLAYER_RPC ?? "http://localhost:4000/api";
@@ -118,21 +118,34 @@ export interface UserProfile {
   total_wins: bigint;    // u32 from contract decodes as bigint
 }
 
-export interface Match {
+// Raw contract struct — fields are scalar types; arrays are JSON strings.
+export interface MatchRaw {
   id: bigint;
   target_text: string;
-  player1: string;   // Address → hex string after fromMap
-  player2: string;   // Address → hex string after fromMap
-  player1_prompt: string;
-  player2_prompt: string;
-  player1_output: string;
-  player2_output: string;
-  state: bigint;     // u8 from contract decodes as bigint; use Number(match.state) in code
-  winner: string;    // Address → hex string after fromMap
+  max_players: bigint;
+  players_json: string;
+  prompts_json: string;
+  outputs_json: string;
+  ranking_json: string;
+  state: bigint;
   judge_reasoning: string;
   created_at: bigint;
   submission_deadline: bigint;
 }
+
+// Decoded match with parsed arrays for easy use in the frontend.
+export interface Match extends MatchRaw {
+  players: string[];   // hex addresses, ordered by join time
+  prompts: string[];   // prompts[i] belongs to players[i]; "" = not submitted
+  outputs: string[];   // simulated LLM outputs after judging
+  ranking: string[];   // ranking[0] = winner; empty until JUDGED
+}
+
+// STATE constants (u8 from contract)
+export const STATE_WAITING   = 0;  // accepting joins, no timer
+export const STATE_FULL      = 1;  // clock running, accepting submissions
+export const STATE_JUDGED    = 2;
+export const STATE_CANCELLED = 3;
 
 export type TxHash = `0x${string}`;
 
@@ -184,24 +197,39 @@ export async function registerUser(username: string, wallet: ActiveWallet): Prom
 // ── Prompt Wars helpers ────────────────────────────────────────────────────
 
 export async function createPromptWarsMatch(
-  wallet: ActiveWallet
+  wallet: ActiveWallet,
+  maxPlayers: number = 50
 ): Promise<{ matchId: number; txHash: TxHash }> {
   if (!wallet) throw new Error("No wallet found");
   const client = await clientFromWallet(wallet);
   const hash = await client.writeContract({
     address: glAddr(PROMPT_WARS_ADDRESS),
     functionName: "create_match",
-    args: [],
+    args: [maxPlayers],
     value: BigInt(0),
   });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await client.waitForTransactionReceipt({ hash, status: "ACCEPTED" as any, retries: 30 });
-  // Read back player's matches post-acceptance to get the real match ID.
-  // The receipt's execution_result is hex-encoded calldata with no public decoder,
-  // so we rely on the contract's view function instead.
   const matchIds = await getMatchesForPlayer(wallet.address);
   const matchId = matchIds.length > 0 ? Math.max(...matchIds) : 0;
   return { matchId, txHash: hash as TxHash };
+}
+
+export async function startMatch(
+  matchId: number,
+  wallet: ActiveWallet
+): Promise<TxHash> {
+  if (!wallet) throw new Error("No wallet found");
+  const client = await clientFromWallet(wallet);
+  const hash = await client.writeContract({
+    address: glAddr(PROMPT_WARS_ADDRESS),
+    functionName: "start_match",
+    args: [matchId],
+    value: BigInt(0),
+  });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await client.waitForTransactionReceipt({ hash, status: "ACCEPTED" as any, retries: 30 });
+  return hash as TxHash;
 }
 
 export async function joinPromptWarsMatch(
@@ -254,15 +282,28 @@ export async function judgeMatch(
   // judge_match uses AI consensus which takes 1-3 min; use 100 retries (5 min budget).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await client.waitForTransactionReceipt({ hash, status: "ACCEPTED" as any, retries: 100 });
-  // Poll until match reaches JUDGED state (state=4) — the ACCEPTED receipt only confirms
+  // Poll until match reaches JUDGED state — the ACCEPTED receipt only confirms
   // the tx was processed; consensus on the AI output may still be resolving.
-  const STATE_JUDGED = 4;
   for (let i = 0; i < 60; i++) {
     const match = await getMatch(matchId);
     if (match && Number(match.state) === STATE_JUDGED) break;
     await new Promise((r) => setTimeout(r, 3000));
   }
   return hash as TxHash;
+}
+
+function parseMatch(raw: MatchRaw): Match {
+  const safeJson = (s: string | undefined, fallback: unknown[]) => {
+    if (!s || s === "[]") return fallback;
+    try { return JSON.parse(s); } catch { return fallback; }
+  };
+  return {
+    ...raw,
+    players: safeJson(raw.players_json, []) as string[],
+    prompts: safeJson(raw.prompts_json, []) as string[],
+    outputs: safeJson(raw.outputs_json, []) as string[],
+    ranking: safeJson(raw.ranking_json, []) as string[],
+  };
 }
 
 export async function getMatch(matchId: number): Promise<Match | null> {
@@ -274,7 +315,7 @@ export async function getMatch(matchId: number): Promise<Match | null> {
       args: [matchId],
     });
     if (result === null || result === undefined) return null;
-    return fromMap(result) as Match;
+    return parseMatch(fromMap(result) as MatchRaw);
   } catch {
     return null;
   }
@@ -289,7 +330,7 @@ export async function getRecentMatches(limit: number): Promise<Match[]> {
       args: [limit],
     });
     const arr = (result as unknown as unknown[]) ?? [];
-    return fromMap(arr) as Match[];
+    return (fromMap(arr) as MatchRaw[]).map(parseMatch);
   } catch {
     return [];
   }
@@ -336,35 +377,31 @@ export async function devForceJudge(
   if (!match) throw new Error("Match not found");
 
   const state = Number(match.state);
-
-  // Fast path: all prompts in, call judgeMatch directly without any submission overhead.
-  if (state === 3) {
-    return judgeMatch(matchId, wallet);
-  }
-
   const addr = wallet.address.toLowerCase();
-  const isP1 = match.player1.toLowerCase() === addr;
-  const isP2 = match.player2.toLowerCase() === addr;
-  const DEV_PLACEHOLDER = "[DEV skip — no prompt submitted]";
 
-  // Submit a placeholder for this player if they haven't submitted yet.
-  if (state === 1 || state === 2) {
-    if (isP1 && !match.player1_prompt) {
-      await submitPrompt(matchId, DEV_PLACEHOLDER, wallet);
-    } else if (isP2 && !match.player2_prompt) {
-      await submitPrompt(matchId, DEV_PLACEHOLDER, wallet);
-    }
-  }
+  // Find this player's index and whether they've submitted.
+  const playerIdx = match.players.findIndex((p) => p.toLowerCase() === addr);
+  const alreadySubmitted = playerIdx >= 0 && !!match.prompts[playerIdx];
+  const allSubmitted = match.prompts.every((p) => !!p);
 
-  // Re-read: if now BOTH_SUBMITTED, judge immediately without hanging.
-  const updated = await getMatch(matchId);
-  if (updated && Number(updated.state) === 3) {
+  // Fast path: all prompts in, call judgeMatch directly.
+  if (allSubmitted) {
     return judgeMatch(matchId, wallet);
   }
 
-  // Other player hasn't submitted. Throwing here avoids the old 3-minute
-  // polling hang that happened when judgeMatch was called prematurely.
+  // Submit a placeholder for this player if they're in the match and haven't submitted.
+  if (state === STATE_FULL && playerIdx >= 0 && !alreadySubmitted) {
+    await submitPrompt(matchId, "[DEV skip — no prompt submitted]", wallet);
+  }
+
+  // Re-read and judge if everyone has now submitted.
+  const updated = await getMatch(matchId);
+  if (updated && updated.prompts.every((p) => !!p)) {
+    return judgeMatch(matchId, wallet);
+  }
+
+  // Not everyone has submitted yet — return fast instead of hanging.
   throw new Error(
-    "Placeholder submitted. Have the other player also click DEV Skip to trigger judging."
+    "Placeholder submitted. Have the other player(s) also click DEV Skip to trigger judging."
   );
 }

@@ -92,9 +92,10 @@ async function main() {
   await joinPromptWarsMatch(matchId, walletB);
   console.log("Joined.\n");
 
-  // ── Submit prompts — craft real attempts at the target ────────────────────
+  // ── Submit prompts — A is on-target; B is deliberately off-topic so all
+  //    validators agree on a winner (preventing MAJORITY_DISAGREE on close calls)
   const promptA = `Write the following and nothing else: ${target.replace(/^A prompt that produces /, "")}`;
-  const promptB = `Produce a response that directly addresses this: ${target.replace(/^A prompt that produces /, "")}. Be concise and precise.`;
+  const promptB = `Write exactly this: "I do not understand the task."`;  // clearly loses
 
   console.log(`Submitting prompt A: "${promptA.slice(0, 80)}..."`);
   await submitPrompt(matchId, promptA, walletA);

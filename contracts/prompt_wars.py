@@ -221,9 +221,12 @@ class PromptWars(gl.Contract):
                 f'"reasoning": "why the winner better matched the target"}}'
             )
 
+            # Use prompt_comparative with a principle that only tests the winner
+            # number so validators agree even when their simulated player outputs
+            # or reasoning differ in wording.
             result = gl.eq_principle.prompt_comparative(
                 lambda: gl.nondet.exec_prompt(judge_prompt, response_format='json'),
-                "The winner should be the player whose prompt output is semantically closer to the target task"
+                'The "winner" field value (integer 1 or 2) is numerically identical in both JSON outputs',
             )
 
             # greyboxing.lua returns a JSON string (not a parsed dict) when it strips

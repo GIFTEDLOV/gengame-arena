@@ -15,7 +15,7 @@ export const USER_REGISTRY_ADDRESS =
 
 export const PROMPT_WARS_ADDRESS =
   process.env.NEXT_PUBLIC_PROMPT_WARS_ADDRESS ??
-  "0x4a21371182988efc2DC07ab7687e3eD079Fc31D4";
+  "0x9cfdeCd8fCCC188996d29242d5cFa6D2085b862E";
 
 const RPC_URL =
   process.env.NEXT_PUBLIC_GENLAYER_RPC ?? "http://localhost:4000/api";

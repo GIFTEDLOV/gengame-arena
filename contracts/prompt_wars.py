@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Optional
 import datetime
 import hashlib
+import json as _json
 
 TARGETS = [
     "A prompt that produces a 4-line poem about silence",
@@ -224,6 +225,11 @@ class PromptWars(gl.Contract):
                 lambda: gl.nondet.exec_prompt(judge_prompt, response_format='json'),
                 "The winner should be the player whose prompt output is semantically closer to the target task"
             )
+
+            # greyboxing.lua returns a JSON string (not a parsed dict) when it strips
+            # code fences via format='text'. Parse it here if needed.
+            if isinstance(result, str):
+                result = _json.loads(result)
 
             winner_num = int(result['winner'])
             p1_output = str(result.get('player1_output', ''))

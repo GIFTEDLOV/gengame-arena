@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { registerUser } from "@/lib/genlayer";
+import { registerUser, getUserProfile } from "@/lib/genlayer";
 import { useActiveWallet } from "@/lib/useActiveWallet";
 
 export default function UsernamePage() {
@@ -33,6 +33,13 @@ export default function UsernamePage() {
     setLoading(true);
     try {
       await registerUser(username, wallet);
+      // Confirm on-chain profile is visible before redirecting — prevents silent
+      // loop back to this page if the read races the write.
+      const profile = await getUserProfile(wallet.address);
+      if (!profile) {
+        setError("Registration succeeded but profile isn't readable yet. Please wait a moment and try again.");
+        return;
+      }
       router.push("/dashboard");
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);

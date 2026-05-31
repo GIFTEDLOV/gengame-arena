@@ -1,6 +1,7 @@
 "use client";
 
 import AuthGuard from "@/components/AuthGuard";
+import TxButton from "@/components/TxButton";
 import Link from "next/link";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
@@ -18,6 +19,8 @@ import { useActiveWallet } from "@/lib/useActiveWallet";
 
 const ZERO_ADDR = "0x" + "0".repeat(40);
 const MAX_PROMPT = 500;
+// submission_deadline == BigInt(0) means the match isn't full yet — timer hasn't started.
+const DEADLINE_UNSET = BigInt(0);
 
 function useCountdown(deadlineUnix: number | null): {
   display: string;
@@ -54,8 +57,6 @@ export default function MatchPage() {
   const [loading, setLoading] = useState(true);
   const [nullCount, setNullCount] = useState(0);
   const [prompt, setPrompt] = useState("");
-  const [txPending, setTxPending] = useState(false);
-  const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
   const [winnerUsername, setWinnerUsername] = useState<string | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -66,8 +67,6 @@ export default function MatchPage() {
       setMatch(m);
       setNullCount(0);
     } else {
-      // Only declare "not found" after 3 consecutive nulls (~9 s) so a freshly
-      // created match has time to become readable before we give up.
       setNullCount((n) => n + 1);
     }
     setLoading(false);
@@ -92,77 +91,15 @@ export default function MatchPage() {
 
   const state = match ? Number(match.state) : -1;
 
-  // Countdown — shown for states 0, 1, 2 (any state that has a deadline)
-  const deadlineUnix =
-    match && state <= 2 ? Number(match.submission_deadline) : null;
+  // Only show countdown when the deadline has actually been set (match is full).
+  const deadlineSet = match ? match.submission_deadline !== DEADLINE_UNSET : false;
+  const deadlineUnix = deadlineSet && state <= 2 ? Number(match!.submission_deadline) : null;
   const countdown = useCountdown(deadlineUnix);
-  const deadlinePassed = match ? Date.now() / 1000 > Number(match.submission_deadline) : false;
-
-  async function doJoin() {
-    if (!wallet) { setError("No wallet found."); return; }
-    setTxPending(true); setError("");
-    try {
-      await joinPromptWarsMatch(matchIdNum, wallet);
-      await fetchMatch();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setTxPending(false);
-    }
-  }
-
-  async function doSubmitPrompt() {
-    if (!wallet) { setError("No wallet found."); return; }
-    if (prompt.length > MAX_PROMPT) { setError("Prompt too long."); return; }
-    setTxPending(true); setError("");
-    try {
-      await submitPrompt(matchIdNum, prompt, wallet);
-      await fetchMatch();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setTxPending(false);
-    }
-  }
-
-  async function doJudge() {
-    if (!wallet) { setError("No wallet found."); return; }
-    setTxPending(true); setError("");
-    try {
-      await judgeMatch(matchIdNum, wallet);
-      await fetchMatch();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setTxPending(false);
-    }
-  }
-
-  async function doCancel() {
-    if (!wallet) { setError("No wallet found."); return; }
-    setTxPending(true); setError("");
-    try {
-      await cancelMatch(matchIdNum, wallet);
-      await fetchMatch();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setTxPending(false);
-    }
-  }
-
-  async function doDevSkip() {
-    if (!wallet) { setError("No wallet found."); return; }
-    setTxPending(true); setError("");
-    try {
-      await devForceJudge(matchIdNum, wallet);
-      await fetchMatch();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setTxPending(false);
-    }
-  }
+  const deadlinePassed = deadlineSet
+    ? Date.now() / 1000 > Number(match!.submission_deadline)
+    : false;
+  // Cancel is available 5 minutes after creation (same window the deadline would have run).
+  const canCancel = match ? Date.now() / 1000 > Number(match.created_at) + 300 : false;
 
   function copyLink() {
     navigator.clipboard.writeText(window.location.href);
@@ -180,8 +117,6 @@ export default function MatchPage() {
     );
   }
 
-  // Keep showing "Loading…" until we've tried at least 3 times with no result,
-  // so a freshly created match isn't shown as "not found" on the first poll.
   if (!match && (loading || nullCount < 3)) {
     return (
       <AuthGuard>
@@ -231,28 +166,30 @@ export default function MatchPage() {
           </div>
         )}
 
-        {/* Countdown + DEV skip button */}
+        {/* Countdown — only shown when the match is full and deadline is real */}
         {countdown.display && (
           <div className="mb-4 flex items-center gap-4">
             <span className={`text-sm font-semibold ${countdown.color}`}>{countdown.display}</span>
-            {process.env.NODE_ENV === "development" && isPlayer && !txPending && state < 4 && (
-              <button
-                onClick={doDevSkip}
-                disabled={txPending}
-                className="rounded border border-orange-700 bg-orange-950 px-2 py-0.5 text-xs text-orange-400 hover:bg-orange-900 disabled:opacity-40"
-              >
-                DEV: Skip to judging
-              </button>
-            )}
           </div>
         )}
 
-        {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
+        {/* DEV Skip — available once match is full (state ≥ 1) and not yet judged */}
+        {process.env.NODE_ENV === "development" && isPlayer && state >= 1 && state < 4 && (
+          <div className="mb-4">
+            <TxButton
+              onClick={() => devForceJudge(matchIdNum, wallet).then(() => { fetchMatch(); })}
+              className="rounded border border-orange-700 bg-orange-950 px-2 py-0.5 text-xs text-orange-400 hover:bg-orange-900 disabled:opacity-40"
+              pendingLabel="Skipping…"
+            >
+              DEV: Skip to judging
+            </TxButton>
+          </div>
+        )}
 
         {/* STATE 0: WAITING_FOR_P2 */}
-        {state === 0 && !deadlinePassed && (
+        {state === 0 && !canCancel && (
           <div className="space-y-4">
-            <p className="text-gray-400">Waiting for a second player to join.</p>
+            <p className="text-gray-400">Waiting for opponent to join — timer starts when they do.</p>
             <div className="flex items-center gap-3">
               <input
                 readOnly
@@ -264,30 +201,28 @@ export default function MatchPage() {
               </button>
             </div>
             {!isPlayer && (
-              <button
-                onClick={doJoin}
-                disabled={txPending}
+              <TxButton
+                onClick={() => joinPromptWarsMatch(matchIdNum, wallet).then(() => { fetchMatch(); })}
                 className="rounded-lg bg-green-600 px-6 py-3 font-semibold hover:bg-green-500 disabled:opacity-50"
               >
-                {txPending ? "Joining…" : "Join Match"}
-              </button>
+                Join Match
+              </TxButton>
             )}
           </div>
         )}
 
-        {/* STATE 0 + expired: no opponent joined */}
-        {state === 0 && deadlinePassed && (
+        {/* STATE 0 + canCancel: no opponent joined, 5 min passed */}
+        {state === 0 && canCancel && (
           <div className="space-y-4">
             {isPlayer1 ? (
               <>
-                <p className="text-gray-300">No opponent joined before the deadline.</p>
-                <button
-                  onClick={doCancel}
-                  disabled={txPending}
+                <p className="text-gray-300">No opponent joined. You can cancel this match.</p>
+                <TxButton
+                  onClick={() => cancelMatch(matchIdNum, wallet).then(() => { fetchMatch(); })}
                   className="rounded-lg bg-red-700 px-6 py-3 font-semibold hover:bg-red-600 disabled:opacity-50"
                 >
-                  {txPending ? "Cancelling…" : "Cancel match"}
-                </button>
+                  Cancel match
+                </TxButton>
               </>
             ) : (
               <p className="text-gray-400">Match expired — no opponent joined in time.</p>
@@ -323,13 +258,13 @@ export default function MatchPage() {
                     <p className="text-sm text-gray-500">
                       {opponentSubmitted ? "Opponent submitted ✓" : "Opponent: thinking…"}
                     </p>
-                    <button
-                      onClick={doSubmitPrompt}
-                      disabled={txPending || prompt.length === 0}
+                    <TxButton
+                      onClick={() => submitPrompt(matchIdNum, prompt, wallet).then(() => { fetchMatch(); })}
+                      disabled={prompt.length === 0}
                       className="rounded-lg bg-indigo-600 px-6 py-2 font-semibold hover:bg-indigo-500 disabled:opacity-50"
                     >
-                      {txPending ? "Submitting…" : "Submit Prompt"}
-                    </button>
+                      Submit Prompt
+                    </TxButton>
                   </div>
                 </div>
               )
@@ -346,13 +281,13 @@ export default function MatchPage() {
               iAmTheSubmitter ? (
                 <>
                   <p className="text-amber-400">Opponent didn&apos;t submit before the deadline.</p>
-                  <button
-                    onClick={doJudge}
-                    disabled={txPending}
+                  <TxButton
+                    onClick={() => judgeMatch(matchIdNum, wallet).then(() => { fetchMatch(); })}
                     className="rounded-lg bg-amber-600 px-6 py-3 font-semibold hover:bg-amber-500 disabled:opacity-50"
+                    pendingLabel="Claiming win… (this may take a minute)"
                   >
-                    {txPending ? "Claiming win…" : "Claim win by forfeit"}
-                  </button>
+                    Claim win by forfeit
+                  </TxButton>
                 </>
               ) : (
                 <p className="text-gray-400">You missed the deadline. Your opponent can claim a forfeit win.</p>
@@ -368,13 +303,13 @@ export default function MatchPage() {
           <div className="space-y-4">
             <p className="text-gray-400">Match expired — neither player submitted before the deadline.</p>
             {isPlayer && (
-              <button
-                onClick={doJudge}
-                disabled={txPending}
+              <TxButton
+                onClick={() => judgeMatch(matchIdNum, wallet).then(() => { fetchMatch(); })}
                 className="rounded-lg bg-gray-600 px-6 py-3 font-semibold hover:bg-gray-500 disabled:opacity-50"
+                pendingLabel="Marking no-contest…"
               >
-                {txPending ? "Marking no-contest…" : "Mark no-contest"}
-              </button>
+                Mark no-contest
+              </TxButton>
             )}
           </div>
         )}
@@ -383,13 +318,13 @@ export default function MatchPage() {
         {state === 3 && (
           <div className="space-y-4">
             <p className="text-gray-400">Both prompts submitted. Ready to judge!</p>
-            <button
-              onClick={doJudge}
-              disabled={txPending}
+            <TxButton
+              onClick={() => judgeMatch(matchIdNum, wallet).then(() => { fetchMatch(); })}
               className="rounded-lg bg-yellow-600 px-6 py-3 font-semibold hover:bg-yellow-500 disabled:opacity-50"
+              pendingLabel="Judging… (this may take a minute)"
             >
-              {txPending ? "Judging… (this may take a minute)" : "Judge Now"}
-            </button>
+              Judge Now
+            </TxButton>
           </div>
         )}
 

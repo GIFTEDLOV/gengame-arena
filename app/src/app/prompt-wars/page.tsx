@@ -1,6 +1,7 @@
 "use client";
 
 import AuthGuard from "@/components/AuthGuard";
+import TxButton from "@/components/TxButton";
 import Link from "next/link";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -26,8 +27,6 @@ const ZERO_ADDR = "0x" + "0".repeat(40);
 export default function PromptWarsPage() {
   const router = useRouter();
   const { wallet, ready } = useActiveWallet();
-  const [creating, setCreating] = useState(false);
-  const [createError, setCreateError] = useState("");
   const [joinId, setJoinId] = useState("");
   const [recentMatches, setRecentMatches] = useState<Match[]>([]);
   const [myMatches, setMyMatches] = useState<Match[]>([]);
@@ -48,20 +47,9 @@ export default function PromptWarsPage() {
   }, [wallet?.address]);
 
   async function handleCreate() {
-    if (!wallet) {
-      setCreateError("No wallet found. Please sign in first.");
-      return;
-    }
-    setCreating(true);
-    setCreateError("");
-    try {
-      const { matchId } = await createPromptWarsMatch(wallet);
-      router.push(`/prompt-wars/${matchId}`);
-    } catch (err) {
-      setCreateError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setCreating(false);
-    }
+    if (!wallet) throw new Error("No wallet found. Please sign in first.");
+    const { matchId } = await createPromptWarsMatch(wallet);
+    router.push(`/prompt-wars/${matchId}`);
   }
 
   function handleJoin(e: React.FormEvent) {
@@ -128,14 +116,14 @@ export default function PromptWarsPage() {
         <div className="mb-10 grid gap-4 sm:grid-cols-2">
           <div className="rounded-xl border border-gray-700 p-6">
             <h2 className="mb-3 text-lg font-semibold">New Match</h2>
-            {createError && <p className="mb-2 text-sm text-red-400">{createError}</p>}
-            <button
+            <TxButton
               onClick={handleCreate}
-              disabled={creating || !ready}
+              disabled={!ready}
               className="w-full rounded-lg bg-indigo-600 py-3 font-semibold hover:bg-indigo-500 disabled:opacity-50"
+              pendingLabel="Creating match…"
             >
-              {creating ? "Creating..." : "Create Match"}
-            </button>
+              Create Match
+            </TxButton>
           </div>
 
           <div className="rounded-xl border border-gray-700 p-6">

@@ -326,9 +326,7 @@ export async function cancelMatch(
   return hash as TxHash;
 }
 
-// Dev-only: forcibly advance a match to judging by submitting placeholder prompts
-// for any player who hasn't submitted, then calling judge_match.
-// Only intended for local development — never call this in production.
+// Dev-only: fast-forward a match to judging. Only intended for local development.
 export async function devForceJudge(
   matchId: number,
   wallet: ActiveWallet
@@ -338,39 +336,35 @@ export async function devForceJudge(
   if (!match) throw new Error("Match not found");
 
   const state = Number(match.state);
+
+  // Fast path: all prompts in, call judgeMatch directly without any submission overhead.
+  if (state === 3) {
+    return judgeMatch(matchId, wallet);
+  }
+
   const addr = wallet.address.toLowerCase();
   const isP1 = match.player1.toLowerCase() === addr;
   const isP2 = match.player2.toLowerCase() === addr;
-
-  // Submit placeholder for whichever player(s) haven't submitted yet
   const DEV_PLACEHOLDER = "[DEV skip — no prompt submitted]";
 
-  if (state === 1) {
-    // BOTH_JOINED — neither submitted; submit for the connected player then
-    // the other won't be able to, so we can only do one side from one wallet.
-    // For dev convenience: submit for the current wallet if they're a player.
-    if (isP1 || isP2) {
-      await submitPrompt(matchId, DEV_PLACEHOLDER, wallet);
-    }
-    // After one submission state is ONE_SUBMITTED — fall through to next block
-    // is handled by the judgeMatch forfeit path once deadline passes.
-  }
-
-  if (state === 2) {
-    // ONE_SUBMITTED — one missing. If the missing player is the current wallet, submit.
+  // Submit a placeholder for this player if they haven't submitted yet.
+  if (state === 1 || state === 2) {
     if (isP1 && !match.player1_prompt) {
       await submitPrompt(matchId, DEV_PLACEHOLDER, wallet);
-    }
-    if (isP2 && !match.player2_prompt) {
+    } else if (isP2 && !match.player2_prompt) {
       await submitPrompt(matchId, DEV_PLACEHOLDER, wallet);
     }
   }
 
-  // Re-read to check if now BOTH_SUBMITTED
+  // Re-read: if now BOTH_SUBMITTED, judge immediately without hanging.
   const updated = await getMatch(matchId);
   if (updated && Number(updated.state) === 3) {
     return judgeMatch(matchId, wallet);
   }
-  // Otherwise let judgeMatch handle forfeit/no-contest via its deadline paths
-  return judgeMatch(matchId, wallet);
+
+  // Other player hasn't submitted. Throwing here avoids the old 3-minute
+  // polling hang that happened when judgeMatch was called prematurely.
+  throw new Error(
+    "Placeholder submitted. Have the other player also click DEV Skip to trigger judging."
+  );
 }

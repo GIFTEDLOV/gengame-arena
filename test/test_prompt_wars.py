@@ -117,6 +117,26 @@ def full_match(contract, registry, direct_vm):
     return match_id
 
 
+# ── deadline sentinel (Fix 1) ─────────────────────────────────────────────────
+
+def test_deadline_not_set_at_create(contract, direct_vm):
+    """submission_deadline is the DEADLINE_UNSET sentinel (0) right after creation."""
+    direct_vm.sender = ALICE_ADDR
+    match_id = contract.create_match()
+    m = contract.get_match(match_id)
+    assert int(m.submission_deadline) == 0  # timer hasn't started
+
+
+def test_deadline_starts_when_player_joins(contract, direct_vm):
+    """submission_deadline becomes a real future timestamp once a second player joins."""
+    direct_vm.sender = ALICE_ADDR
+    match_id = contract.create_match()
+    direct_vm.sender = BOB_ADDR
+    contract.join_match(match_id)
+    m = contract.get_match(match_id)
+    assert int(m.submission_deadline) > 0  # timer has started
+
+
 # ── create_match ──────────────────────────────────────────────────────────────
 
 def test_create_match_returns_incrementing_ids(contract, direct_vm):

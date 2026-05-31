@@ -40,6 +40,7 @@ TARGETS = [
 ]
 
 ZERO_ADDR = Address(bytes(20))
+DEADLINE_UNSET = u64(0)  # Sentinel: timer hasn't started yet (match not full)
 
 STATE_WAITING_FOR_P2 = u8(0)
 STATE_BOTH_JOINED = u8(1)
@@ -105,7 +106,7 @@ class PromptWars(gl.Contract):
             winner=ZERO_ADDR,
             judge_reasoning="",
             created_at=u64(now),
-            submission_deadline=u64(now + 300),
+            submission_deadline=DEADLINE_UNSET,  # timer starts when match is full
         )
 
         self.next_match_id = u64(int(match_id) + 1)
@@ -122,6 +123,7 @@ class PromptWars(gl.Contract):
         if match.player1 == caller:
             raise Exception("Cannot join your own match")
 
+        now = int(datetime.datetime.now().timestamp())
         self.matches[match_id] = Match(
             id=match.id,
             target_text=match.target_text,
@@ -135,7 +137,7 @@ class PromptWars(gl.Contract):
             winner=match.winner,
             judge_reasoning=match.judge_reasoning,
             created_at=match.created_at,
-            submission_deadline=match.submission_deadline,
+            submission_deadline=u64(now + 300),  # 5-min clock starts when match is full
         )
 
     @gl.public.write
@@ -164,7 +166,7 @@ class PromptWars(gl.Contract):
             raise Exception("Prompt exceeds 500 characters")
 
         now = int(datetime.datetime.now().timestamp())
-        if now > int(match.submission_deadline):
+        if int(match.submission_deadline) != 0 and now > int(match.submission_deadline):
             raise Exception("Submission deadline passed")
 
         new_p1_prompt = prompt if is_player1 else match.player1_prompt
@@ -327,7 +329,7 @@ class PromptWars(gl.Contract):
             raise Exception("Can only cancel a match that is still waiting for Player 2")
 
         now = int(datetime.datetime.now().timestamp())
-        if now <= int(match.submission_deadline):
+        if now <= int(match.created_at) + 300:
             raise Exception("Can only cancel after the deadline has passed")
 
         self.matches[match_id] = Match(

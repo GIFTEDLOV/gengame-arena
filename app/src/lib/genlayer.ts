@@ -17,6 +17,10 @@ export const PROMPT_WARS_ADDRESS =
   process.env.NEXT_PUBLIC_PROMPT_WARS_ADDRESS ??
   "0x48e610a2dB8ba246fdfBbaa50eaa91DCd5D45131";
 
+export const PREDICTIONS_ADDRESS =
+  process.env.NEXT_PUBLIC_PREDICTIONS_ADDRESS ??
+  "0x0000000000000000000000000000000000000000"; // placeholder until deployed
+
 const RPC_URL =
   process.env.NEXT_PUBLIC_GENLAYER_RPC ?? "http://localhost:4000/api";
 
@@ -404,4 +408,245 @@ export async function devForceJudge(
   throw new Error(
     "Placeholder submitted. Have the other player(s) also click DEV Skip to trigger judging."
   );
+}
+
+// ── Predictions ────────────────────────────────────────────────────────────
+
+export const MARKET_TYPE_BINARY  = 0;
+export const MARKET_TYPE_NUMERIC = 1;
+
+export const PRED_STATE_OPEN      = 0;
+export const PRED_STATE_RESOLVED  = 1;
+export const PRED_STATE_REJECTED  = 2;
+export const PRED_STATE_CANCELLED = 3;
+
+export interface MarketRaw {
+  id: bigint;
+  creator: string;
+  question: string;
+  market_type: bigint;
+  resolution_datetime: bigint;
+  created_at: bigint;
+  state: bigint;
+  rejection_reason: string;
+  players_json: string;
+  predictions_json: string;
+  submission_times_json: string;
+  actual_answer: string;
+  actual_answer_source: string;
+  ranking_json: string;
+  resolution_reasoning: string;
+}
+
+export interface Market extends MarketRaw {
+  players: string[];
+  predictions: (boolean | number)[];
+  submission_times: number[];
+  ranking: string[];
+}
+
+function parseMarket(raw: MarketRaw): Market {
+  const safeJson = (s: string | undefined, fallback: unknown[]) => {
+    if (!s || s === "[]") return fallback;
+    try { return JSON.parse(s); } catch { return fallback; }
+  };
+  return {
+    ...raw,
+    players: safeJson(raw.players_json, []) as string[],
+    predictions: safeJson(raw.predictions_json, []) as (boolean | number)[],
+    submission_times: safeJson(raw.submission_times_json, []) as number[],
+    ranking: safeJson(raw.ranking_json, []) as string[],
+  };
+}
+
+export async function getMarket(marketId: number): Promise<Market | null> {
+  const client = getGenlayerClient();
+  try {
+    const result = await client.readContract({
+      address: glAddr(PREDICTIONS_ADDRESS),
+      functionName: "get_market",
+      args: [marketId],
+    });
+    if (result === null || result === undefined) return null;
+    return parseMarket(fromMap(result) as MarketRaw);
+  } catch {
+    return null;
+  }
+}
+
+export async function getOpenMarkets(limit: number): Promise<number[]> {
+  const client = getGenlayerClient();
+  try {
+    const result = await client.readContract({
+      address: glAddr(PREDICTIONS_ADDRESS),
+      functionName: "get_open_markets",
+      args: [limit],
+    });
+    return ((result as bigint[]) ?? []).map(Number);
+  } catch {
+    return [];
+  }
+}
+
+export async function getResolvedMarkets(limit: number): Promise<number[]> {
+  const client = getGenlayerClient();
+  try {
+    const result = await client.readContract({
+      address: glAddr(PREDICTIONS_ADDRESS),
+      functionName: "get_resolved_markets",
+      args: [limit],
+    });
+    return ((result as bigint[]) ?? []).map(Number);
+  } catch {
+    return [];
+  }
+}
+
+export async function getMarketsForPlayer(address: string): Promise<number[]> {
+  const client = getGenlayerClient();
+  try {
+    const result = await client.readContract({
+      address: glAddr(PREDICTIONS_ADDRESS),
+      functionName: "get_markets_for_player",
+      args: [address],
+    });
+    return ((result as bigint[]) ?? []).map(Number);
+  } catch {
+    return [];
+  }
+}
+
+export async function createBinaryMarket(
+  question: string,
+  resolutionDatetime: number,
+  wallet: ActiveWallet
+): Promise<{ marketId: number; txHash: TxHash }> {
+  if (!wallet) throw new Error("No wallet found");
+  const client = await clientFromWallet(wallet);
+  const hash = await client.writeContract({
+    address: glAddr(PREDICTIONS_ADDRESS),
+    functionName: "create_market",
+    args: [question, MARKET_TYPE_BINARY, resolutionDatetime],
+    value: BigInt(0),
+  });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await client.waitForTransactionReceipt({ hash, status: "ACCEPTED" as any, retries: 100 });
+  const ids = await getMarketsForPlayer(wallet.address);
+  // The newly created market is tracked by creator only after a join; instead
+  // read all open markets and find the one whose creator matches and was just created.
+  const openIds = await getOpenMarkets(100);
+  let marketId = 0;
+  for (const id of openIds) {
+    const m = await getMarket(id);
+    if (m && m.creator.toLowerCase() === wallet.address.toLowerCase()) {
+      marketId = id;
+      break;
+    }
+  }
+  // Fallback: use highest id from player markets
+  if (marketId === 0 && ids.length > 0) marketId = Math.max(...ids);
+  return { marketId, txHash: hash as TxHash };
+}
+
+export async function createNumericMarket(
+  question: string,
+  resolutionDatetime: number,
+  wallet: ActiveWallet
+): Promise<{ marketId: number; txHash: TxHash }> {
+  if (!wallet) throw new Error("No wallet found");
+  const client = await clientFromWallet(wallet);
+  const hash = await client.writeContract({
+    address: glAddr(PREDICTIONS_ADDRESS),
+    functionName: "create_market",
+    args: [question, MARKET_TYPE_NUMERIC, resolutionDatetime],
+    value: BigInt(0),
+  });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await client.waitForTransactionReceipt({ hash, status: "ACCEPTED" as any, retries: 100 });
+  const openIds = await getOpenMarkets(100);
+  let marketId = 0;
+  for (const id of openIds) {
+    const m = await getMarket(id);
+    if (m && m.creator.toLowerCase() === wallet.address.toLowerCase()) {
+      marketId = id;
+      break;
+    }
+  }
+  return { marketId, txHash: hash as TxHash };
+}
+
+export async function joinAndPredictBinary(
+  marketId: number,
+  prediction: boolean,
+  wallet: ActiveWallet
+): Promise<TxHash> {
+  if (!wallet) throw new Error("No wallet found");
+  const client = await clientFromWallet(wallet);
+  const hash = await client.writeContract({
+    address: glAddr(PREDICTIONS_ADDRESS),
+    functionName: "join_and_predict_binary",
+    args: [marketId, prediction],
+    value: BigInt(0),
+  });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await client.waitForTransactionReceipt({ hash, status: "ACCEPTED" as any, retries: 30 });
+  return hash as TxHash;
+}
+
+export async function joinAndPredictNumeric(
+  marketId: number,
+  prediction: number,
+  wallet: ActiveWallet
+): Promise<TxHash> {
+  if (!wallet) throw new Error("No wallet found");
+  const client = await clientFromWallet(wallet);
+  const hash = await client.writeContract({
+    address: glAddr(PREDICTIONS_ADDRESS),
+    functionName: "join_and_predict_numeric",
+    args: [marketId, String(prediction)],
+    value: BigInt(0),
+  });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await client.waitForTransactionReceipt({ hash, status: "ACCEPTED" as any, retries: 30 });
+  return hash as TxHash;
+}
+
+export async function resolveMarket(
+  marketId: number,
+  wallet: ActiveWallet
+): Promise<TxHash> {
+  if (!wallet) throw new Error("No wallet found");
+  const client = await clientFromWallet(wallet);
+  const hash = await client.writeContract({
+    address: glAddr(PREDICTIONS_ADDRESS),
+    functionName: "resolve_market",
+    args: [marketId],
+    value: BigInt(0),
+  });
+  // AI web-fetch resolution takes 1-3 min; use 100 retries.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await client.waitForTransactionReceipt({ hash, status: "ACCEPTED" as any, retries: 100 });
+  for (let i = 0; i < 60; i++) {
+    const m = await getMarket(marketId);
+    if (m && Number(m.state) === PRED_STATE_RESOLVED) break;
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+  return hash as TxHash;
+}
+
+export async function cancelMarketPredictions(
+  marketId: number,
+  wallet: ActiveWallet
+): Promise<TxHash> {
+  if (!wallet) throw new Error("No wallet found");
+  const client = await clientFromWallet(wallet);
+  const hash = await client.writeContract({
+    address: glAddr(PREDICTIONS_ADDRESS),
+    functionName: "cancel_market",
+    args: [marketId],
+    value: BigInt(0),
+  });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await client.waitForTransactionReceipt({ hash, status: "ACCEPTED" as any, retries: 30 });
+  return hash as TxHash;
 }

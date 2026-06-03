@@ -648,7 +648,7 @@ export async function cancelMarketPredictions(
 
 export const TRIVIA_ROYALE_ADDRESS =
   process.env.NEXT_PUBLIC_TRIVIA_ROYALE_ADDRESS ??
-  "0x0000000000000000000000000000000000000000";
+  "0x55dAF33a4F23ABb085762A3303ab68C5969289B2";
 
 export const TRIVIA_STATE_WAITING     = 0;
 export const TRIVIA_STATE_GENERATING  = 1;
@@ -766,6 +766,8 @@ export async function createTriviaMatch(
   wallet: ActiveWallet
 ): Promise<{ matchId: number; txHash: TxHash }> {
   if (!wallet) throw new Error("No wallet found");
+  const prevIds = await getTriviaMatchesForPlayer(wallet.address);
+  const prevMax = prevIds.length > 0 ? Math.max(...prevIds) : -1;
   const client = await clientFromWallet(wallet);
   const hash = await client.writeContract({
     address: glAddr(TRIVIA_ROYALE_ADDRESS),
@@ -773,12 +775,25 @@ export async function createTriviaMatch(
     args: [topic, maxPlayers],
     value: BigInt(0),
   });
-  // AI topic verification — generous retries
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await client.waitForTransactionReceipt({ hash, status: "ACCEPTED" as any, retries: 100 });
+  // AI topic verification can take 5-10 min in local Studio.
+  // Try receipt first (3 min window), then fall back to state polling for up to 20 min.
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await client.waitForTransactionReceipt({ hash, status: "ACCEPTED" as any, retries: 60 });
+  } catch {
+    // Receipt poll timed out — poll until the match appears (proves AI call finished)
+    let found = false;
+    for (let i = 0; i < 400; i++) {
+      const ids = await getTriviaMatchesForPlayer(wallet.address);
+      if (ids.length > 0 && Math.max(...ids) > prevMax) { found = true; break; }
+      await new Promise((r) => setTimeout(r, 3000));
+    }
+    if (!found) throw new Error("createTriviaMatch: timed out waiting for match to appear on-chain");
+  }
   const matchIds = await getTriviaMatchesForPlayer(wallet.address);
-  const matchId = matchIds.length > 0 ? Math.max(...matchIds) : 0;
-  return { matchId, txHash: hash as TxHash };
+  const newMax = matchIds.length > 0 ? Math.max(...matchIds) : -1;
+  if (newMax <= prevMax) throw new Error("createTriviaMatch: no new match found after tx");
+  return { matchId: newMax, txHash: hash as TxHash };
 }
 
 export async function joinTriviaMatch(
@@ -794,7 +809,7 @@ export async function joinTriviaMatch(
     value: BigInt(0),
   });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await client.waitForTransactionReceipt({ hash, status: "ACCEPTED" as any, retries: 30 });
+  await client.waitForTransactionReceipt({ hash, status: "ACCEPTED" as any, retries: 60 });
   return hash as TxHash;
 }
 
@@ -810,9 +825,18 @@ export async function startTriviaMatch(
     args: [matchId],
     value: BigInt(0),
   });
-  // AI question generation can take 1-3 minutes
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await client.waitForTransactionReceipt({ hash, status: "ACCEPTED" as any, retries: 100 });
+  // AI question generation can take 2-5 minutes — try receipt first, fall back to state poll
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await client.waitForTransactionReceipt({ hash, status: "ACCEPTED" as any, retries: 60 });
+  } catch {
+    // Receipt poll timed out — poll match state until it leaves WAITING
+    for (let i = 0; i < 120; i++) {
+      const m = await getTriviaMatch(matchId);
+      if (m && Number(m.state) !== TRIVIA_STATE_WAITING) break;
+      await new Promise((r) => setTimeout(r, 3000));
+    }
+  }
   return hash as TxHash;
 }
 
@@ -839,6 +863,8 @@ export async function resolveTriviaRound(
   wallet: ActiveWallet
 ): Promise<TxHash> {
   if (!wallet) throw new Error("No wallet found");
+  const prevMatch = await getTriviaMatch(matchId);
+  const prevRound = prevMatch ? Number(prevMatch.current_round) : -1;
   const client = await clientFromWallet(wallet);
   const hash = await client.writeContract({
     address: glAddr(TRIVIA_ROYALE_ADDRESS),
@@ -846,9 +872,21 @@ export async function resolveTriviaRound(
     args: [matchId],
     value: BigInt(0),
   });
-  // AI open-ended verification can take 1-3 minutes
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await client.waitForTransactionReceipt({ hash, status: "ACCEPTED" as any, retries: 100 });
+  // AI open-ended verification can take 1-3 minutes — try receipt, fall back to state poll
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await client.waitForTransactionReceipt({ hash, status: "ACCEPTED" as any, retries: 60 });
+  } catch {
+    // Poll until round advances or match ends
+    for (let i = 0; i < 60; i++) {
+      const m = await getTriviaMatch(matchId);
+      if (!m) break;
+      const roundChanged = Number(m.current_round) !== prevRound;
+      const ended = Number(m.state) === TRIVIA_STATE_ENDED || Number(m.state) === TRIVIA_STATE_CANCELLED;
+      if (roundChanged || ended) break;
+      await new Promise((r) => setTimeout(r, 3000));
+    }
+  }
   return hash as TxHash;
 }
 

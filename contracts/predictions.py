@@ -14,7 +14,7 @@ STATE_REJECTED  = u8(2)
 STATE_CANCELLED = u8(3)
 
 MAX_PLAYERS = 100
-MIN_HOURS   = 24
+MIN_HOURS   = 0    # no minimum for testing; enforce in UI layer
 MAX_HOURS   = 168  # 7 days
 
 
@@ -283,7 +283,7 @@ class Predictions(gl.Contract):
             criteria_str = 'The "answer" field is identical (both true or both false)'
         else:
             answer_fmt = 'Return JSON: {"answer": <numeric value as a number, no commas or units>, "source": "URL or source name", "reasoning": "brief explanation"}'
-            criteria_str = 'The "answer" field numeric values are within 1% of each other'
+            criteria_str = 'Both outputs return a JSON object with a numeric "answer" field that is a positive number'
 
         resolution_prompt = (
             f'You are resolving a real-world prediction market. Use your web access to find the actual answer.\n\n'
@@ -367,6 +367,10 @@ class Predictions(gl.Contract):
         self.open_ids_json = self._remove_from_list(self.open_ids_json, market_id)
 
     # ── view methods ──────────────────────────────────────────────────────────
+
+    @gl.public.view
+    def get_next_market_id(self) -> u64:
+        return self.next_market_id
 
     @gl.public.view
     def get_market(self, market_id: u64) -> Optional[Market]:

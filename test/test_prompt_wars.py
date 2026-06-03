@@ -117,16 +117,19 @@ def contract(direct_deploy, direct_vm, registry):
 
 @pytest.fixture
 def full_match(contract, registry, direct_vm):
-    """Register Alice and Bob, create a 2-player match, join, and submit both prompts."""
+    """Register Alice and Bob, create a 2-player match, join, host starts, and submit both prompts."""
     direct_vm.sender = ALICE_ADDR
     registry.register_user("Alice")
     direct_vm.sender = BOB_ADDR
     registry.register_user("Bob")
 
     direct_vm.sender = ALICE_ADDR
-    match_id = contract.create_match(2)   # 2-player for fast fill
+    match_id = contract.create_match(2)
     direct_vm.sender = BOB_ADDR
-    contract.join_match(match_id)         # fills → STATE_FULL
+    contract.join_match(match_id)
+    # Host (Alice) must explicitly start
+    direct_vm.sender = ALICE_ADDR
+    contract.start_match(match_id)        # → STATE_FULL
 
     direct_vm.sender = ALICE_ADDR
     contract.submit_prompt(match_id, "Write a haiku about autumn leaves in the city")
@@ -146,14 +149,18 @@ def test_deadline_not_set_at_create(contract, direct_vm):
     assert int(m.submission_deadline) == 0
 
 
-def test_deadline_starts_when_player_joins(contract, direct_vm):
-    """For a 2-player match, the second join fills it and starts the clock."""
+def test_deadline_starts_when_host_calls_start(contract, direct_vm):
+    """Clock only starts when host explicitly calls start_match, not on join."""
     direct_vm.sender = ALICE_ADDR
     match_id = contract.create_match(2)
     direct_vm.sender = BOB_ADDR
     contract.join_match(match_id)
     m = contract.get_match(match_id)
-    assert int(m.submission_deadline) > 0
+    assert int(m.submission_deadline) == 0  # still unset after join
+    direct_vm.sender = ALICE_ADDR
+    contract.start_match(match_id)
+    m = contract.get_match(match_id)
+    assert int(m.submission_deadline) > 0   # set after host starts
 
 
 # ── create_match ──────────────────────────────────────────────────────────────
@@ -236,14 +243,15 @@ def test_join_match_adds_player(contract, direct_vm):
     assert pl[1].lower() == BOB_ADDR.lower()
 
 
-def test_join_match_fills_and_starts_clock_at_capacity(contract, direct_vm):
+def test_join_match_fills_but_stays_waiting(contract, direct_vm):
+    """Filling to capacity does NOT auto-start — state remains WAITING."""
     direct_vm.sender = ALICE_ADDR
     match_id = contract.create_match(2)
     direct_vm.sender = BOB_ADDR
     contract.join_match(match_id)
     m = contract.get_match(match_id)
-    assert int(m.state) == 1  # STATE_FULL
-    assert int(m.submission_deadline) > 0
+    assert int(m.state) == 0  # STATE_WAITING (not auto-started)
+    assert int(m.submission_deadline) == 0  # deadline not set
 
 
 def test_join_match_does_not_start_clock_when_not_full(contract, direct_vm):
@@ -266,12 +274,13 @@ def test_join_match_duplicate_rejected(contract, direct_vm):
 
 
 def test_join_match_full_rejected(contract, direct_vm):
+    """Joining a full match (at max_players) is rejected with 'Match is full'."""
     direct_vm.sender = ALICE_ADDR
     match_id = contract.create_match(2)
     direct_vm.sender = BOB_ADDR
-    contract.join_match(match_id)   # fills → STATE_FULL
+    contract.join_match(match_id)   # fills slots, state stays WAITING
     direct_vm.sender = CAROL_ADDR
-    with direct_vm.expect_revert("Match is not open for joining"):
+    with direct_vm.expect_revert("Match is full"):
         contract.join_match(match_id)
 
 
@@ -290,7 +299,7 @@ def test_join_match_up_to_capacity(contract, direct_vm):
         contract.join_match(match_id)
     m = contract.get_match(match_id)
     assert len(players(m)) == 4
-    assert int(m.state) == 1  # FULL
+    assert int(m.state) == 0  # WAITING — no auto-start
 
 
 # ── start_match ───────────────────────────────────────────────────────────────
@@ -314,13 +323,26 @@ def test_start_match_rejects_with_1_player(contract, direct_vm):
         contract.start_match(match_id)
 
 
-def test_start_match_rejects_non_player(contract, direct_vm):
+def test_start_match_rejects_non_host(contract, direct_vm):
+    """Only the host (players[0]) can start — joined non-host or non-player both rejected."""
     direct_vm.sender = ALICE_ADDR
     match_id = contract.create_match(10)
     direct_vm.sender = BOB_ADDR
     contract.join_match(match_id)
+    # Carol is not a player at all
     direct_vm.sender = CAROL_ADDR
-    with direct_vm.expect_revert("Only a joined player can start the match"):
+    with direct_vm.expect_revert("Only the host can start the match"):
+        contract.start_match(match_id)
+
+
+def test_start_match_rejects_non_host_player(contract, direct_vm):
+    """Bob has joined but is not the host — must be rejected."""
+    direct_vm.sender = ALICE_ADDR
+    match_id = contract.create_match(10)
+    direct_vm.sender = BOB_ADDR
+    contract.join_match(match_id)
+    direct_vm.sender = BOB_ADDR
+    with direct_vm.expect_revert("Only the host can start the match"):
         contract.start_match(match_id)
 
 
@@ -328,19 +350,28 @@ def test_start_match_rejects_already_started(contract, direct_vm):
     direct_vm.sender = ALICE_ADDR
     match_id = contract.create_match(2)
     direct_vm.sender = BOB_ADDR
-    contract.join_match(match_id)  # fills → STATE_FULL automatically
+    contract.join_match(match_id)
     direct_vm.sender = ALICE_ADDR
+    contract.start_match(match_id)  # → STATE_FULL
     with direct_vm.expect_revert("Match has already started or is finished"):
         contract.start_match(match_id)
 
 
 # ── submit_prompt ─────────────────────────────────────────────────────────────
 
-def test_submit_prompt_player1(contract, direct_vm):
+def _started_2p(contract, direct_vm):
+    """Helper: create a 2-player match and have the host start it."""
     direct_vm.sender = ALICE_ADDR
     match_id = contract.create_match(2)
     direct_vm.sender = BOB_ADDR
     contract.join_match(match_id)
+    direct_vm.sender = ALICE_ADDR
+    contract.start_match(match_id)
+    return match_id
+
+
+def test_submit_prompt_player1(contract, direct_vm):
+    match_id = _started_2p(contract, direct_vm)
     direct_vm.sender = ALICE_ADDR
     contract.submit_prompt(match_id, "My haiku prompt")
     m = contract.get_match(match_id)
@@ -348,20 +379,15 @@ def test_submit_prompt_player1(contract, direct_vm):
 
 
 def test_submit_prompt_player2(contract, direct_vm):
-    direct_vm.sender = ALICE_ADDR
-    match_id = contract.create_match(2)
+    match_id = _started_2p(contract, direct_vm)
     direct_vm.sender = BOB_ADDR
-    contract.join_match(match_id)
     contract.submit_prompt(match_id, "Bob's haiku prompt")
     m = contract.get_match(match_id)
     assert prompts(m)[1] == "Bob's haiku prompt"
 
 
 def test_submit_prompt_non_player_rejected(contract, direct_vm):
-    direct_vm.sender = ALICE_ADDR
-    match_id = contract.create_match(2)
-    direct_vm.sender = BOB_ADDR
-    contract.join_match(match_id)
+    match_id = _started_2p(contract, direct_vm)
     direct_vm.sender = CAROL_ADDR
     with direct_vm.expect_revert("Not a player in this match"):
         contract.submit_prompt(match_id, "Intruder prompt")
@@ -369,10 +395,7 @@ def test_submit_prompt_non_player_rejected(contract, direct_vm):
 
 def test_submit_prompt_idempotent_update_allowed(contract, direct_vm):
     """Players can update their prompt before the deadline (idempotent)."""
-    direct_vm.sender = ALICE_ADDR
-    match_id = contract.create_match(2)
-    direct_vm.sender = BOB_ADDR
-    contract.join_match(match_id)
+    match_id = _started_2p(contract, direct_vm)
     direct_vm.sender = ALICE_ADDR
     contract.submit_prompt(match_id, "First prompt")
     contract.submit_prompt(match_id, "Updated prompt")
@@ -381,20 +404,14 @@ def test_submit_prompt_idempotent_update_allowed(contract, direct_vm):
 
 
 def test_submit_prompt_too_long_rejected(contract, direct_vm):
-    direct_vm.sender = ALICE_ADDR
-    match_id = contract.create_match(2)
-    direct_vm.sender = BOB_ADDR
-    contract.join_match(match_id)
+    match_id = _started_2p(contract, direct_vm)
     direct_vm.sender = ALICE_ADDR
     with direct_vm.expect_revert("Prompt exceeds 500 characters"):
         contract.submit_prompt(match_id, "x" * 501)
 
 
 def test_submit_prompt_exactly_500_chars_allowed(contract, direct_vm):
-    direct_vm.sender = ALICE_ADDR
-    match_id = contract.create_match(2)
-    direct_vm.sender = BOB_ADDR
-    contract.join_match(match_id)
+    match_id = _started_2p(contract, direct_vm)
     direct_vm.sender = ALICE_ADDR
     contract.submit_prompt(match_id, "x" * 500)
     m = contract.get_match(match_id)
@@ -414,13 +431,18 @@ def test_submit_before_match_full_rejected(contract, direct_vm):
 
 # ── state transitions ─────────────────────────────────────────────────────────
 
-def test_state_waiting_to_full_on_join(contract, direct_vm):
+def test_state_waiting_to_full_on_start(contract, direct_vm):
+    """State goes WAITING → FULL only when host calls start_match, not on join."""
     direct_vm.sender = ALICE_ADDR
     match_id = contract.create_match(2)
     assert int(contract.get_match(match_id).state) == 0  # WAITING
 
     direct_vm.sender = BOB_ADDR
     contract.join_match(match_id)
+    assert int(contract.get_match(match_id).state) == 0  # still WAITING
+
+    direct_vm.sender = ALICE_ADDR
+    contract.start_match(match_id)
     assert int(contract.get_match(match_id).state) == 1  # FULL
 
 
@@ -434,10 +456,7 @@ def test_state_full_to_judged(contract, direct_vm, full_match):
 
 def test_judge_match_requires_all_submitted_before_deadline(contract, direct_vm):
     """STATE_FULL but not all submitted and deadline not passed → reject."""
-    direct_vm.sender = ALICE_ADDR
-    match_id = contract.create_match(2)
-    direct_vm.sender = BOB_ADDR
-    contract.join_match(match_id)
+    match_id = _started_2p(contract, direct_vm)
     # Nobody submitted yet
     with direct_vm.expect_revert("Waiting for all players to submit or deadline to pass"):
         contract.judge_match(match_id)
@@ -445,10 +464,7 @@ def test_judge_match_requires_all_submitted_before_deadline(contract, direct_vm)
 
 def test_judge_match_requires_all_or_deadline_partial(contract, direct_vm):
     """ONE submitted, deadline not passed → reject."""
-    direct_vm.sender = ALICE_ADDR
-    match_id = contract.create_match(2)
-    direct_vm.sender = BOB_ADDR
-    contract.join_match(match_id)
+    match_id = _started_2p(contract, direct_vm)
     direct_vm.sender = ALICE_ADDR
     contract.submit_prompt(match_id, "Alice prompt")
     with direct_vm.expect_revert("Waiting for all players to submit or deadline to pass"):
@@ -594,6 +610,7 @@ def one_submitted_expired(contract, registry, direct_vm):
     direct_vm.sender = BOB_ADDR
     contract.join_match(match_id)
     direct_vm.sender = ALICE_ADDR
+    contract.start_match(match_id)   # host starts → STATE_FULL
     contract.submit_prompt(match_id, "Alice's prompt")
 
     direct_vm.warp((datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=7200)).isoformat())
@@ -623,6 +640,9 @@ def test_forfeit_p2_wins_when_only_p2_submitted(contract, registry, direct_vm):
     match_id = contract.create_match(2)
     direct_vm.sender = BOB_ADDR
     contract.join_match(match_id)
+    direct_vm.sender = ALICE_ADDR
+    contract.start_match(match_id)   # host starts
+    direct_vm.sender = BOB_ADDR
     contract.submit_prompt(match_id, "Bob's prompt")
 
     direct_vm.warp((datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=7200)).isoformat())
@@ -668,6 +688,8 @@ def both_joined_expired(contract, direct_vm):
     match_id = contract.create_match(2)
     direct_vm.sender = BOB_ADDR
     contract.join_match(match_id)
+    direct_vm.sender = ALICE_ADDR
+    contract.start_match(match_id)   # host starts → STATE_FULL
     direct_vm.warp((datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=7200)).isoformat())
     return match_id
 
@@ -739,9 +761,10 @@ def test_cancel_match_requires_waiting_state(contract, direct_vm):
     direct_vm.sender = ALICE_ADDR
     match_id = contract.create_match(2)
     direct_vm.sender = BOB_ADDR
-    contract.join_match(match_id)   # → STATE_FULL
-    direct_vm.warp((datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=7200)).isoformat())
+    contract.join_match(match_id)
     direct_vm.sender = ALICE_ADDR
+    contract.start_match(match_id)   # → STATE_FULL
+    direct_vm.warp((datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=7200)).isoformat())
     with direct_vm.expect_revert("Can only cancel a match that is still waiting for players"):
         contract.cancel_match(match_id)
 
@@ -768,6 +791,8 @@ def three_player_full_match(contract, registry, direct_vm):
     for addr in [BOB_ADDR, CAROL_ADDR]:
         direct_vm.sender = addr
         contract.join_match(match_id)
+    direct_vm.sender = ALICE_ADDR
+    contract.start_match(match_id)   # host starts → STATE_FULL
 
     direct_vm.sender = ALICE_ADDR
     contract.submit_prompt(match_id, "Alice haiku prompt")
@@ -822,6 +847,8 @@ def test_n_player_partial_submission_after_deadline(contract, direct_vm):
     for addr in [BOB_ADDR, CAROL_ADDR]:
         direct_vm.sender = addr
         contract.join_match(match_id)
+    direct_vm.sender = ALICE_ADDR
+    contract.start_match(match_id)   # host starts
     # Alice and Bob submit; Carol does not
     direct_vm.sender = ALICE_ADDR
     contract.submit_prompt(match_id, "Alice prompt")

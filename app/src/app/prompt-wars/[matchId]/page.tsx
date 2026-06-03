@@ -115,6 +115,7 @@ export default function MatchPage() {
   // Derived player info
   const playerIdx = match ? match.players.findIndex((p) => p.toLowerCase() === currentAddr) : -1;
   const isPlayer = playerIdx >= 0;
+  const isHost = match ? match.players[0]?.toLowerCase() === currentAddr : false;
   const myPrompt = isPlayer ? match!.prompts[playerIdx] : "";
   const iAlreadySubmitted = !!myPrompt;
   const submittedCount = match ? match.prompts.filter((p) => !!p).length : 0;
@@ -228,18 +229,22 @@ export default function MatchPage() {
                 </TxButton>
               )}
 
-              {isPlayer && totalPlayers >= 2 && (
+              {isHost && totalPlayers >= 2 && (
                 <TxButton
                   onClick={() => startMatch(matchIdNum, wallet).then(() => { fetchMatch(); })}
                   className="rounded-lg bg-indigo-600 px-6 py-2 font-semibold hover:bg-indigo-500 disabled:opacity-50"
                   pendingLabel="Starting…"
                 >
-                  Start Match Now
+                  Start Match
                 </TxButton>
               )}
 
-              {isPlayer && totalPlayers < 2 && (
-                <p className="text-sm text-gray-500">Waiting for opponent — timer starts when they join or you click Start.</p>
+              {isHost && totalPlayers < 2 && (
+                <p className="text-sm text-gray-500">Waiting for a player to join before you can start.</p>
+              )}
+
+              {isPlayer && !isHost && (
+                <p className="text-sm text-amber-400">Waiting for host to start the match…</p>
               )}
             </div>
 

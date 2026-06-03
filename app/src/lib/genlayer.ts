@@ -19,7 +19,7 @@ export const PROMPT_WARS_ADDRESS =
 
 export const PREDICTIONS_ADDRESS =
   process.env.NEXT_PUBLIC_PREDICTIONS_ADDRESS ??
-  "0x0000000000000000000000000000000000000000"; // placeholder until deployed
+  "0xE39eEC4AD3E3fB6a74E95084ba06f77bd2562c7D";
 
 const RPC_URL =
   process.env.NEXT_PUBLIC_GENLAYER_RPC ?? "http://localhost:4000/api";
@@ -516,12 +516,27 @@ export async function getMarketsForPlayer(address: string): Promise<number[]> {
   }
 }
 
+async function getNextMarketId(): Promise<number> {
+  const client = getGenlayerClient();
+  try {
+    const result = await client.readContract({
+      address: glAddr(PREDICTIONS_ADDRESS),
+      functionName: "get_next_market_id",
+      args: [],
+    });
+    return Number(result as bigint);
+  } catch {
+    return 0;
+  }
+}
+
 export async function createBinaryMarket(
   question: string,
   resolutionDatetime: number,
   wallet: ActiveWallet
 ): Promise<{ marketId: number; txHash: TxHash }> {
   if (!wallet) throw new Error("No wallet found");
+  const marketId = await getNextMarketId();
   const client = await clientFromWallet(wallet);
   const hash = await client.writeContract({
     address: glAddr(PREDICTIONS_ADDRESS),
@@ -531,20 +546,6 @@ export async function createBinaryMarket(
   });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await client.waitForTransactionReceipt({ hash, status: "ACCEPTED" as any, retries: 100 });
-  const ids = await getMarketsForPlayer(wallet.address);
-  // The newly created market is tracked by creator only after a join; instead
-  // read all open markets and find the one whose creator matches and was just created.
-  const openIds = await getOpenMarkets(100);
-  let marketId = 0;
-  for (const id of openIds) {
-    const m = await getMarket(id);
-    if (m && m.creator.toLowerCase() === wallet.address.toLowerCase()) {
-      marketId = id;
-      break;
-    }
-  }
-  // Fallback: use highest id from player markets
-  if (marketId === 0 && ids.length > 0) marketId = Math.max(...ids);
   return { marketId, txHash: hash as TxHash };
 }
 
@@ -554,6 +555,7 @@ export async function createNumericMarket(
   wallet: ActiveWallet
 ): Promise<{ marketId: number; txHash: TxHash }> {
   if (!wallet) throw new Error("No wallet found");
+  const marketId = await getNextMarketId();
   const client = await clientFromWallet(wallet);
   const hash = await client.writeContract({
     address: glAddr(PREDICTIONS_ADDRESS),
@@ -563,15 +565,6 @@ export async function createNumericMarket(
   });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await client.waitForTransactionReceipt({ hash, status: "ACCEPTED" as any, retries: 100 });
-  const openIds = await getOpenMarkets(100);
-  let marketId = 0;
-  for (const id of openIds) {
-    const m = await getMarket(id);
-    if (m && m.creator.toLowerCase() === wallet.address.toLowerCase()) {
-      marketId = id;
-      break;
-    }
-  }
   return { marketId, txHash: hash as TxHash };
 }
 
@@ -623,9 +616,9 @@ export async function resolveMarket(
     args: [marketId],
     value: BigInt(0),
   });
-  // AI web-fetch resolution takes 1-3 min; use 100 retries.
+  // AI web-fetch resolution takes 1-5 min per market; use 200 retries (10 min budget).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await client.waitForTransactionReceipt({ hash, status: "ACCEPTED" as any, retries: 100 });
+  await client.waitForTransactionReceipt({ hash, status: "ACCEPTED" as any, retries: 200 });
   for (let i = 0; i < 60; i++) {
     const m = await getMarket(marketId);
     if (m && Number(m.state) === PRED_STATE_RESOLVED) break;

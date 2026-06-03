@@ -200,27 +200,23 @@ class PromptWars(gl.Contract):
         prompts.append("")
         outputs.append("")
 
-        if len(players) >= int(match.max_players):
-            # Reached capacity: start the clock
-            self._start_clock(match_id, match, players, prompts, outputs, ranking)
-        else:
-            self._save_match(match_id, Match(
-                id=match.id,
-                target_text=match.target_text,
-                max_players=match.max_players,
-                players_json=_addrs_to_json(players),
-                prompts_json=_strs_to_json(prompts),
-                outputs_json=_strs_to_json(outputs),
-                ranking_json=match.ranking_json,
-                state=match.state,
-                judge_reasoning=match.judge_reasoning,
-                created_at=match.created_at,
-                submission_deadline=match.submission_deadline,
-            ))
+        self._save_match(match_id, Match(
+            id=match.id,
+            target_text=match.target_text,
+            max_players=match.max_players,
+            players_json=_addrs_to_json(players),
+            prompts_json=_strs_to_json(prompts),
+            outputs_json=_strs_to_json(outputs),
+            ranking_json=match.ranking_json,
+            state=match.state,
+            judge_reasoning=match.judge_reasoning,
+            created_at=match.created_at,
+            submission_deadline=match.submission_deadline,
+        ))
 
     @gl.public.write
     def start_match(self, match_id: u64) -> None:
-        """Any joined player can start the match early (before slots fill up)."""
+        """Only the host (players[0]) can start the match."""
         caller = gl.message.sender_address
         if match_id not in self.matches:
             raise Exception("Match not found")
@@ -236,8 +232,8 @@ class PromptWars(gl.Contract):
 
         if len(players) < 2:
             raise Exception("Need at least 2 players to start")
-        if self._index_of(players, caller) < 0:
-            raise Exception("Only a joined player can start the match")
+        if players[0] != caller:
+            raise Exception("Only the host can start the match")
 
         self._start_clock(match_id, match, players, prompts, outputs, ranking)
 

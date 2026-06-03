@@ -44,7 +44,7 @@ def main():
 
     print(f"Deploying {contract_path.name} to {args.rpc} ...")
     print(f"  user_registry_address = {args.user_registry}")
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, shell=(sys.platform == "win32"))
 
     output = result.stdout + result.stderr
     deployed_addr = None

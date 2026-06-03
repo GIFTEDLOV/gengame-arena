@@ -215,6 +215,28 @@ export default function PredictionsPage() {
                 placeholder="Will Bitcoin exceed $100,000 USD by the resolution time?"
                 className="w-full rounded-lg border border-gray-600 bg-gray-900 px-4 py-3 text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
               />
+              {marketType === MARKET_TYPE_NUMERIC &&
+                /price|rate|currency|exchange|now|today|current|live|spot|index|value of/i.test(question) && (
+                <div className="mt-2 rounded-lg border border-amber-600 bg-amber-900/20 p-3 text-sm">
+                  <p className="font-semibold text-amber-400 mb-1">⚠️ Heads up — live data warning</p>
+                  <p className="text-gray-300 mb-2">
+                    Frequently-changing values (like spot prices or current rates) may fail to resolve on
+                    local Studio because each simulated validator must independently fetch live data and
+                    reach consensus. Network hiccups can cause a{" "}
+                    <code className="text-amber-300">MAJORITY_DISAGREE</code> failure.
+                  </p>
+                  <p className="text-gray-400 font-medium mb-1">More reliable numeric questions reference stable values:</p>
+                  <ul className="list-disc list-inside text-gray-400 space-y-0.5">
+                    <li>Totals or supply caps (e.g. "What is the maximum supply of Bitcoin")</li>
+                    <li>Historical facts (e.g. "What was the closing S&amp;P 500 on January 2, 2025")</li>
+                    <li>Fixed protocol parameters</li>
+                  </ul>
+                  <p className="mt-2 text-gray-500 text-xs">
+                    This limitation does not apply on GenLayer mainnet, where many distributed validators
+                    reach consensus reliably.
+                  </p>
+                </div>
+              )}
             </div>
 
             <div>

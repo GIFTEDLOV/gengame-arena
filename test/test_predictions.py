@@ -12,7 +12,7 @@ DAVE_ADDR  = "0xdddddddddddddddddddddddddddddddddddddddd"
 NOW     = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
 IN_48H  = NOW + 48 * 3600
 IN_7D   = NOW + 7 * 24 * 3600 - 1
-TOO_SOON = NOW + 1800       # 30 min — too soon
+TOO_SOON = 1                # Unix epoch — definitively in the past (MIN_HOURS=0, only past timestamps rejected)
 TOO_FAR  = NOW + 8 * 24 * 3600  # 8 days — too far
 
 VERIFY_YES = "YES — the question can be answered from public web sources."

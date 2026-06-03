@@ -225,12 +225,18 @@ class TriviaRoyale(gl.Contract):
             f']}}'
         )
         result = gl.eq_principle.prompt_comparative(
-            lambda: gl.nondet.exec_prompt(gen_prompt, response_format='json'),
+            lambda: gl.nondet.exec_prompt(gen_prompt, response_format='text'),
             f'Both JSON outputs contain a "questions" array with exactly {NUM_QUESTIONS} items, '
             f'each with a non-empty "text" field and a "type" field',
         )
         if isinstance(result, str):
-            result = _json.loads(result)
+            # Strip markdown code fences the model sometimes wraps JSON in
+            stripped = result.strip()
+            if stripped.startswith('```'):
+                lines = stripped.splitlines()
+                lines = [l for l in lines if not l.strip().startswith('```')]
+                stripped = '\n'.join(lines).strip()
+            result = _json.loads(stripped)
 
         questions = result.get('questions', [])
         if len(questions) < NUM_QUESTIONS:

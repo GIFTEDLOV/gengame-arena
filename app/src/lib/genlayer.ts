@@ -11,15 +11,15 @@ function glAddr(a: string): GLAddress {
 
 export const USER_REGISTRY_ADDRESS =
   process.env.NEXT_PUBLIC_USER_REGISTRY_ADDRESS ??
-  "0xD5d16B25b811AD222Df2Ff0E1aE359B101F298A5";
+  "0x900cCC8eAcD9E777683877eb9E11FB23c3b5d24e";
 
 export const PROMPT_WARS_ADDRESS =
   process.env.NEXT_PUBLIC_PROMPT_WARS_ADDRESS ??
-  "0x48e610a2dB8ba246fdfBbaa50eaa91DCd5D45131";
+  "0x712fc5c69DB0DB9F5cb0031B8203b859Bacf4989";
 
 export const PREDICTIONS_ADDRESS =
   process.env.NEXT_PUBLIC_PREDICTIONS_ADDRESS ??
-  "0xE39eEC4AD3E3fB6a74E95084ba06f77bd2562c7D";
+  "0x8d6d0AcEEA4273469d944aCbeAe53E236FF1ac5b";
 
 const RPC_URL =
   process.env.NEXT_PUBLIC_GENLAYER_RPC ?? "http://localhost:4000/api";
@@ -194,7 +194,7 @@ export async function registerUser(username: string, wallet: ActiveWallet): Prom
     value: BigInt(0),
   });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await client.waitForTransactionReceipt({ hash, status: "ACCEPTED" as any, retries: 30 });
+  await client.waitForTransactionReceipt({ hash, status: "ACCEPTED" as any, retries: 60 });
   return hash as TxHash;
 }
 
@@ -648,7 +648,7 @@ export async function cancelMarketPredictions(
 
 export const TRIVIA_ROYALE_ADDRESS =
   process.env.NEXT_PUBLIC_TRIVIA_ROYALE_ADDRESS ??
-  "0x55dAF33a4F23ABb085762A3303ab68C5969289B2";
+  "0x6C500774ecaD4d495c64F7E2ac631F2f767a0bf3";
 
 export const TRIVIA_STATE_WAITING     = 0;
 export const TRIVIA_STATE_GENERATING  = 1;

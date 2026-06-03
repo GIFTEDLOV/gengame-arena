@@ -643,3 +643,228 @@ export async function cancelMarketPredictions(
   await client.waitForTransactionReceipt({ hash, status: "ACCEPTED" as any, retries: 30 });
   return hash as TxHash;
 }
+
+// ── Trivia Royale ──────────────────────────────────────────────────────────
+
+export const TRIVIA_ROYALE_ADDRESS =
+  process.env.NEXT_PUBLIC_TRIVIA_ROYALE_ADDRESS ??
+  "0x0000000000000000000000000000000000000000";
+
+export const TRIVIA_STATE_WAITING     = 0;
+export const TRIVIA_STATE_GENERATING  = 1;
+export const TRIVIA_STATE_IN_PROGRESS = 2;
+export const TRIVIA_STATE_RESOLVING   = 3;
+export const TRIVIA_STATE_ENDED       = 4;
+export const TRIVIA_STATE_CANCELLED   = 5;
+
+export interface TriviaQuestion {
+  type: "mc" | "open";
+  text: string;
+  options: string[];
+  correct_answer: string;
+  alternates: string[];
+}
+
+export interface TriviaMatchRaw {
+  id: bigint;
+  host_str: string;
+  topic: string;
+  max_players: bigint;
+  players_json: string;
+  eliminated_json: string;
+  state: bigint;
+  rejection_reason: string;
+  questions_json: string;
+  current_round: bigint;
+  round_answers_json: string;
+  answer_deadline: bigint;
+  winner_str: string;
+  created_at: bigint;
+}
+
+export interface TriviaMatch extends TriviaMatchRaw {
+  players: string[];
+  eliminated: string[];
+  questions: TriviaQuestion[];
+  round_answers: Record<string, string>;
+}
+
+function parseTriviaMatch(raw: TriviaMatchRaw): TriviaMatch {
+  const safeJson = <T>(s: string | undefined, fallback: T): T => {
+    if (!s || s === "[]" || s === "{}") return fallback;
+    try { return JSON.parse(s) as T; } catch { return fallback; }
+  };
+  return {
+    ...raw,
+    players: safeJson<string[]>(raw.players_json, []),
+    eliminated: safeJson<string[]>(raw.eliminated_json, []),
+    questions: safeJson<TriviaQuestion[]>(raw.questions_json, []),
+    round_answers: safeJson<Record<string, string>>(raw.round_answers_json, {}),
+  };
+}
+
+export async function getTriviaMatch(matchId: number): Promise<TriviaMatch | null> {
+  const client = getGenlayerClient();
+  try {
+    const result = await client.readContract({
+      address: glAddr(TRIVIA_ROYALE_ADDRESS),
+      functionName: "get_match",
+      args: [matchId],
+    });
+    if (result === null || result === undefined) return null;
+    return parseTriviaMatch(fromMap(result) as TriviaMatchRaw);
+  } catch {
+    return null;
+  }
+}
+
+export async function getOpenTriviaMatches(limit: number): Promise<number[]> {
+  const client = getGenlayerClient();
+  try {
+    const result = await client.readContract({
+      address: glAddr(TRIVIA_ROYALE_ADDRESS),
+      functionName: "get_open_matches",
+      args: [limit],
+    });
+    return ((result as bigint[]) ?? []).map(Number);
+  } catch {
+    return [];
+  }
+}
+
+export async function getActiveTriviaMatches(limit: number): Promise<number[]> {
+  const client = getGenlayerClient();
+  try {
+    const result = await client.readContract({
+      address: glAddr(TRIVIA_ROYALE_ADDRESS),
+      functionName: "get_active_matches",
+      args: [limit],
+    });
+    return ((result as bigint[]) ?? []).map(Number);
+  } catch {
+    return [];
+  }
+}
+
+export async function getTriviaMatchesForPlayer(playerAddress: string): Promise<number[]> {
+  const client = getGenlayerClient();
+  try {
+    const result = await client.readContract({
+      address: glAddr(TRIVIA_ROYALE_ADDRESS),
+      functionName: "get_matches_for_player",
+      args: [playerAddress],
+    });
+    return ((result as bigint[]) ?? []).map(Number);
+  } catch {
+    return [];
+  }
+}
+
+export async function createTriviaMatch(
+  topic: string,
+  maxPlayers: number,
+  wallet: ActiveWallet
+): Promise<{ matchId: number; txHash: TxHash }> {
+  if (!wallet) throw new Error("No wallet found");
+  const client = await clientFromWallet(wallet);
+  const hash = await client.writeContract({
+    address: glAddr(TRIVIA_ROYALE_ADDRESS),
+    functionName: "create_match",
+    args: [topic, maxPlayers],
+    value: BigInt(0),
+  });
+  // AI topic verification — generous retries
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await client.waitForTransactionReceipt({ hash, status: "ACCEPTED" as any, retries: 100 });
+  const matchIds = await getTriviaMatchesForPlayer(wallet.address);
+  const matchId = matchIds.length > 0 ? Math.max(...matchIds) : 0;
+  return { matchId, txHash: hash as TxHash };
+}
+
+export async function joinTriviaMatch(
+  matchId: number,
+  wallet: ActiveWallet
+): Promise<TxHash> {
+  if (!wallet) throw new Error("No wallet found");
+  const client = await clientFromWallet(wallet);
+  const hash = await client.writeContract({
+    address: glAddr(TRIVIA_ROYALE_ADDRESS),
+    functionName: "join_match",
+    args: [matchId],
+    value: BigInt(0),
+  });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await client.waitForTransactionReceipt({ hash, status: "ACCEPTED" as any, retries: 30 });
+  return hash as TxHash;
+}
+
+export async function startTriviaMatch(
+  matchId: number,
+  wallet: ActiveWallet
+): Promise<TxHash> {
+  if (!wallet) throw new Error("No wallet found");
+  const client = await clientFromWallet(wallet);
+  const hash = await client.writeContract({
+    address: glAddr(TRIVIA_ROYALE_ADDRESS),
+    functionName: "start_match",
+    args: [matchId],
+    value: BigInt(0),
+  });
+  // AI question generation can take 1-3 minutes
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await client.waitForTransactionReceipt({ hash, status: "ACCEPTED" as any, retries: 100 });
+  return hash as TxHash;
+}
+
+export async function submitTriviaAnswer(
+  matchId: number,
+  answer: string,
+  wallet: ActiveWallet
+): Promise<TxHash> {
+  if (!wallet) throw new Error("No wallet found");
+  const client = await clientFromWallet(wallet);
+  const hash = await client.writeContract({
+    address: glAddr(TRIVIA_ROYALE_ADDRESS),
+    functionName: "submit_answer",
+    args: [matchId, answer],
+    value: BigInt(0),
+  });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await client.waitForTransactionReceipt({ hash, status: "ACCEPTED" as any, retries: 30 });
+  return hash as TxHash;
+}
+
+export async function resolveTriviaRound(
+  matchId: number,
+  wallet: ActiveWallet
+): Promise<TxHash> {
+  if (!wallet) throw new Error("No wallet found");
+  const client = await clientFromWallet(wallet);
+  const hash = await client.writeContract({
+    address: glAddr(TRIVIA_ROYALE_ADDRESS),
+    functionName: "resolve_round",
+    args: [matchId],
+    value: BigInt(0),
+  });
+  // AI open-ended verification can take 1-3 minutes
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await client.waitForTransactionReceipt({ hash, status: "ACCEPTED" as any, retries: 100 });
+  return hash as TxHash;
+}
+
+export async function cancelTriviaMatch(
+  matchId: number,
+  wallet: ActiveWallet
+): Promise<TxHash> {
+  if (!wallet) throw new Error("No wallet found");
+  const client = await clientFromWallet(wallet);
+  const hash = await client.writeContract({
+    address: glAddr(TRIVIA_ROYALE_ADDRESS),
+    functionName: "cancel_match",
+    args: [matchId],
+    value: BigInt(0),
+  });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await client.waitForTransactionReceipt({ hash, status: "ACCEPTED" as any, retries: 30 });
+  return hash as TxHash;
+}

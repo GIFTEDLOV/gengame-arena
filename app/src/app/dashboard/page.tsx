@@ -5,11 +5,10 @@ import { usePrivy } from "@privy-io/react-auth";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { getUserProfile, getOpenMarkets } from "@/lib/genlayer";
+import { getUserProfile, getOpenMarkets, getOpenTriviaMatches } from "@/lib/genlayer";
 import { useActiveWallet } from "@/lib/useActiveWallet";
 
-const GAME_BASE = [
-  { name: "Trivia Royale", href: "/trivia-royale", description: "AI-verified trivia battles" },
+const GAME_STATIC = [
   { name: "Prompt Wars", href: "/prompt-wars", description: "Compete with AI prompt engineering" },
   { name: "Title Wars", href: "/title-wars", description: "Best headline wins" },
 ];
@@ -21,9 +20,11 @@ export default function DashboardPage() {
   const [guestUsername, setGuestUsername] = useState<string | null>(null);
   const [loadingGuest, setLoadingGuest] = useState(false);
   const [openMarketCount, setOpenMarketCount] = useState<number | null>(null);
+  const [openTriviaCount, setOpenTriviaCount] = useState<number | null>(null);
 
   useEffect(() => {
     getOpenMarkets(100).then((ids) => setOpenMarketCount(ids.length)).catch(() => {});
+    getOpenTriviaMatches(100).then((ids) => setOpenTriviaCount(ids.length)).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -65,6 +66,13 @@ export default function DashboardPage() {
       ? "No open markets yet — create one"
       : `${openMarketCount} open market${openMarketCount !== 1 ? "s" : ""}`;
 
+  const triviaHint =
+    openTriviaCount === null
+      ? "AI-verified trivia battle royale"
+      : openTriviaCount === 0
+      ? "No open matches yet — create one"
+      : `${openTriviaCount} open match${openTriviaCount !== 1 ? "es" : ""}`;
+
   return (
     <AuthGuard>
       <main className="min-h-screen p-8">
@@ -82,7 +90,15 @@ export default function DashboardPage() {
             <p className="text-sm text-gray-400">{predictionsHint}</p>
           </Link>
 
-          {GAME_BASE.map((game) => (
+          <Link
+            href="/trivia-royale"
+            className="rounded-xl border border-gray-700 p-6 hover:border-indigo-500 hover:bg-gray-900 transition-colors"
+          >
+            <h2 className="mb-1 text-lg font-semibold">Trivia Royale</h2>
+            <p className="text-sm text-gray-400">{triviaHint}</p>
+          </Link>
+
+          {GAME_STATIC.map((game) => (
             <Link
               key={game.href}
               href={game.href}

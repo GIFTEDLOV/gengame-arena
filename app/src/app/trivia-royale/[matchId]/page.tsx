@@ -261,14 +261,21 @@ export default function TriviaMatchPage() {
 
   // ── GENERATING ─────────────────────────────────────────────────────────────
   if (state === TRIVIA_STATE_GENERATING) {
+    const isMidGame = match.questions.length > 0;
+    const activeSurvivors = survivorCount;
     return (
       <AuthGuard>
         <main className="flex min-h-screen flex-col items-center justify-center gap-4 p-8">
           <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-indigo-500" />
-          <h2 className="text-xl font-semibold">Generating trivia questions…</h2>
+          <h2 className="text-xl font-semibold">
+            {isMidGame
+              ? `Generating more questions… (${activeSurvivors} player${activeSurvivors !== 1 ? "s" : ""} still standing)`
+              : "Generating trivia questions…"}
+          </h2>
           <p className="text-gray-400 text-sm text-center max-w-sm">
-            Validators are agreeing on the question pool for <strong>{match.topic}</strong>.
-            This may take 30–60 seconds.
+            {isMidGame
+              ? `The question pool is exhausted. Generating a fresh batch for "${match.topic}".`
+              : `Validators are agreeing on the question pool for "${match.topic}". This may take 30–60 seconds.`}
           </p>
         </main>
       </AuthGuard>

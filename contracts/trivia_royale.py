@@ -435,23 +435,28 @@ class TriviaRoyale(gl.Contract):
         else:
             # 2+ survivors — advance to next round
             if new_round >= len(questions):
-                # Out of questions — pick first survivor by join order as winner
-                winner = survivors[0]
-                self._save(match_id, TriviaMatch(
-                    id=m.id, host_str=m.host_str, topic=m.topic, max_players=m.max_players,
-                    players_json=m.players_json,
-                    eliminated_json=_addrs_to_json(elim_list),
-                    state=STATE_ENDED, rejection_reason="",
-                    questions_json=m.questions_json, current_round=u8(new_round % 256),
-                    round_answers_json="{}",
-                    answer_deadline=u64(0),
-                    winner_str=str(winner).lower(), created_at=m.created_at,
-                ))
-                self.active_ids_json = self._remove_id(self.active_ids_json, match_id)
-                registry = gl.get_contract_at(self.user_registry_address)
-                for p in players:
-                    is_winner = str(p).lower() == str(winner).lower()
-                    registry.emit().record_match(p, is_winner)
+                # Out of questions
+                if len(questions) >= 40:
+                    # Hard cap: 40 questions exhausted — declare shared win for all survivors
+                    winner = survivors[0]
+                    survivor_strs = set(str(s).lower() for s in survivors)
+                    self._save(match_id, TriviaMatch(
+                        id=m.id, host_str=m.host_str, topic=m.topic, max_players=m.max_players,
+                        players_json=m.players_json,
+                        eliminated_json=_addrs_to_json(elim_list),
+                        state=STATE_ENDED, rejection_reason="",
+                        questions_json=m.questions_json, current_round=u8(new_round % 256),
+                        round_answers_json="{}",
+                        answer_deadline=u64(0),
+                        winner_str=str(winner).lower(), created_at=m.created_at,
+                    ))
+                    self.active_ids_json = self._remove_id(self.active_ids_json, match_id)
+                    registry = gl.get_contract_at(self.user_registry_address)
+                    for p in players:
+                        registry.emit().record_match(p, str(p).lower() in survivor_strs)
+                else:
+                    # Generate another batch of questions so the match can continue
+                    self._generate_more_questions(match_id, m, elim_list, new_round)
             else:
                 self._save(match_id, TriviaMatch(
                     id=m.id, host_str=m.host_str, topic=m.topic, max_players=m.max_players,
@@ -463,6 +468,78 @@ class TriviaRoyale(gl.Contract):
                     answer_deadline=u64(new_deadline),
                     winner_str="", created_at=m.created_at,
                 ))
+
+    def _generate_more_questions(self, match_id: u64, m, elim_list: list, new_round: int, batch_size: int = 8) -> None:
+        """Generate an additional batch of questions when the pool is exhausted mid-match."""
+        questions = _json.loads(m.questions_json)
+        existing_texts = [q.get('text', '') for q in questions]
+        avoid_block = "\n".join(f"- {t}" for t in existing_texts)
+
+        gen_prompt = (
+            f'Generate exactly {batch_size} additional trivia questions about: "{m.topic}"\n\n'
+            f'These questions have already been asked, do not repeat them:\n{avoid_block}\n\n'
+            f'Format rules:\n'
+            f'- Mix of multiple-choice and open-ended questions.\n'
+            f'- Multiple-choice: 4 options labeled "A) ...", "B) ...", "C) ...", "D) ...". '
+            f'  One correct answer (give just the letter: A, B, C, or D).\n'
+            f'- Open-ended: Short factual answer (1-4 words). '
+            f'  Give the canonical answer and up to 2 acceptable alternate phrasings.\n\n'
+            f'Return strict JSON only — no markdown, no explanation:\n'
+            f'{{"questions": [\n'
+            f'  {{"type": "mc", "text": "...", "options": ["A) ...", "B) ...", "C) ...", "D) ..."], '
+            f'"correct_answer": "A", "alternates": []}}\n'
+            f']}}'
+        )
+        result = gl.eq_principle.prompt_comparative(
+            lambda: gl.nondet.exec_prompt(gen_prompt, response_format='text'),
+            f'Both JSON outputs contain a "questions" array with exactly {batch_size} items, '
+            f'each with a non-empty "text" field and a "type" field',
+        )
+        if isinstance(result, str):
+            stripped = result.strip()
+            if stripped.startswith('```'):
+                lines = stripped.splitlines()
+                lines = [l for l in lines if not l.strip().startswith('```')]
+                stripped = '\n'.join(lines).strip()
+            try:
+                result = _json.loads(stripped)
+            except _json.JSONDecodeError:
+                last_close = stripped.rfind('},')
+                if last_close < 0:
+                    last_close = stripped.rfind('}')
+                if last_close > 0:
+                    try:
+                        result = _json.loads(stripped[:last_close + 1] + ']}')
+                    except _json.JSONDecodeError:
+                        result = {"questions": []}
+                else:
+                    result = {"questions": []}
+
+        new_qs = result.get('questions', [])
+        while len(new_qs) < batch_size:
+            new_qs.append({
+                "type": "mc",
+                "text": f"Bonus question about {m.topic}: Is this topic fascinating?",
+                "options": ["A) Yes", "B) No", "C) Maybe", "D) Unknown"],
+                "correct_answer": "A",
+                "alternates": [],
+            })
+
+        all_questions = questions + new_qs
+        now = int(datetime.datetime.now().timestamp())
+        new_deadline = now + ROUND_SECONDS
+
+        self._save(match_id, TriviaMatch(
+            id=m.id, host_str=m.host_str, topic=m.topic, max_players=m.max_players,
+            players_json=m.players_json,
+            eliminated_json=_addrs_to_json(elim_list),
+            state=STATE_IN_PROGRESS, rejection_reason="",
+            questions_json=_json.dumps(all_questions),
+            current_round=u8(new_round % 256),
+            round_answers_json="{}",
+            answer_deadline=u64(new_deadline),
+            winner_str="", created_at=m.created_at,
+        ))
 
     @gl.public.write
     def cancel_match(self, match_id: u64) -> None:

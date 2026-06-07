@@ -36,6 +36,32 @@ QUESTIONS_RESPONSE = json.dumps({
     ]
 })
 
+ERICA_ADDR = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+FRANK_ADDR = "0xffffffffffffffffffffffffffffffffffffffff"
+
+# 8-question pool for batch-gen tests (easier to exhaust than the 15-question default)
+QUESTIONS_RESPONSE_8 = json.dumps({
+    "questions": [
+        {**_MC_TEMPLATE, "text": f"MC question {i+1}"} for i in range(8)
+    ]
+})
+
+# Batch returned by _generate_more_questions
+QUESTIONS_RESPONSE_BATCH = json.dumps({
+    "questions": [
+        {**_MC_TEMPLATE, "text": f"Extra MC question {i+1}"} for i in range(8)
+    ]
+})
+
+# 40-question pool for hard-cap test
+QUESTIONS_RESPONSE_40 = json.dumps({
+    "questions": [
+        {**_MC_TEMPLATE, "text": f"MC question {i+1}"} for i in range(40)
+    ]
+})
+
+MOCK_MORE_QUESTIONS = "additional trivia questions"  # substring in _generate_more_questions prompt
+
 VERIFY_CORRECT   = json.dumps({"results": [True]})
 VERIFY_INCORRECT = json.dumps({"results": [False]})
 VERIFY_MIXED_2   = json.dumps({"results": [True, False]})    # player 0 correct, 1 wrong
@@ -520,6 +546,84 @@ def test_get_matches_for_player(contract, direct_vm, open_match):
 def test_get_matches_for_player_not_joined(contract, direct_vm, open_match):
     carol_ids = [int(x) for x in contract.get_matches_for_player(CAROL_ADDR)]
     assert int(open_match) not in carol_ids
+
+
+# ── batch question generation ─────────────────────────────────────────────────
+
+def test_batch_generation_on_pool_exhaustion(contract, direct_vm):
+    """6 players all survive 8 rounds → new batch generated → match continues."""
+    all_addrs = [ALICE_ADDR, BOB_ADDR, CAROL_ADDR, DAVE_ADDR, ERICA_ADDR, FRANK_ADDR]
+
+    direct_vm.mock_llm(MOCK_TOPIC_CHECK, VERIFY_YES)
+    direct_vm.sender = ALICE_ADDR
+    mid = contract.create_match(TOPIC_OK, 6)
+    for addr in all_addrs[1:]:
+        direct_vm.sender = addr
+        contract.join_match(mid)
+
+    direct_vm.mock_llm(MOCK_QUESTION_GEN, QUESTIONS_RESPONSE_8)
+    direct_vm.sender = ALICE_ADDR
+    contract.start_match(mid)
+
+    m = contract.get_match(mid)
+    assert len(questions(m)) == 8
+
+    # Play 7 rounds where all 6 survive (everyone answers correctly)
+    for _ in range(7):
+        for addr in all_addrs:
+            direct_vm.sender = addr
+            contract.submit_answer(mid, "A")  # correct
+        direct_vm.warp(
+            (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=3600)).isoformat()
+        )
+        contract.resolve_round(mid)
+
+    # Round 8 (index 7): pool will be exhausted after this resolve → batch gen triggers
+    direct_vm.mock_llm(MOCK_MORE_QUESTIONS, QUESTIONS_RESPONSE_BATCH)
+    for addr in all_addrs:
+        direct_vm.sender = addr
+        contract.submit_answer(mid, "A")
+    direct_vm.warp(
+        (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=3600)).isoformat()
+    )
+    contract.resolve_round(mid)
+
+    m = contract.get_match(mid)
+    assert int(m.state) == 2  # STATE_IN_PROGRESS
+    assert len(questions(m)) == 16  # 8 initial + 8 more
+    assert int(m.current_round) == 8  # advanced to next question
+
+
+def test_hardcap_40_questions_shared_win(contract, direct_vm):
+    """When 40 questions are exhausted with 2+ survivors, a shared win is declared."""
+    direct_vm.mock_llm(MOCK_TOPIC_CHECK, VERIFY_YES)
+    direct_vm.sender = ALICE_ADDR
+    mid = contract.create_match(TOPIC_OK, 4)
+    direct_vm.sender = BOB_ADDR
+    contract.join_match(mid)
+
+    direct_vm.mock_llm(MOCK_QUESTION_GEN, QUESTIONS_RESPONSE_40)
+    direct_vm.sender = ALICE_ADDR
+    contract.start_match(mid)
+
+    m = contract.get_match(mid)
+    assert len(questions(m)) == 40
+
+    # Play 40 rounds where both survive (both always answer correctly)
+    for _ in range(40):
+        direct_vm.sender = ALICE_ADDR
+        contract.submit_answer(mid, "A")  # correct
+        direct_vm.sender = BOB_ADDR
+        contract.submit_answer(mid, "A")  # correct
+        direct_vm.warp(
+            (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=3600)).isoformat()
+        )
+        contract.resolve_round(mid)
+
+    m = contract.get_match(mid)
+    assert int(m.state) == 4  # STATE_ENDED
+    assert m.winner_str != ""  # a winner declared (first survivor = Alice)
+    assert m.winner_str == ALICE_ADDR.lower()
 
 
 # ── state machine edge cases ──────────────────────────────────────────────────

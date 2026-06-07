@@ -5,12 +5,11 @@ import { usePrivy } from "@privy-io/react-auth";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { getUserProfile, getOpenMarkets, getOpenTriviaMatches } from "@/lib/genlayer";
+import { getUserProfile, getOpenMarkets, getOpenTriviaMatches, getOpenTitleMatches } from "@/lib/genlayer";
 import { useActiveWallet } from "@/lib/useActiveWallet";
 
 const GAME_STATIC = [
   { name: "Prompt Wars", href: "/prompt-wars", description: "Compete with AI prompt engineering" },
-  { name: "Title Wars", href: "/title-wars", description: "Best headline wins" },
 ];
 
 export default function DashboardPage() {
@@ -21,10 +20,12 @@ export default function DashboardPage() {
   const [loadingGuest, setLoadingGuest] = useState(false);
   const [openMarketCount, setOpenMarketCount] = useState<number | null>(null);
   const [openTriviaCount, setOpenTriviaCount] = useState<number | null>(null);
+  const [openTitleCount, setOpenTitleCount] = useState<number | null>(null);
 
   useEffect(() => {
     getOpenMarkets(100).then((ids) => setOpenMarketCount(ids.length)).catch(() => {});
     getOpenTriviaMatches(100).then((ids) => setOpenTriviaCount(ids.length)).catch(() => {});
+    getOpenTitleMatches(100).then((ids) => setOpenTitleCount(ids.length)).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -73,6 +74,13 @@ export default function DashboardPage() {
       ? "No open matches yet — create one"
       : `${openTriviaCount} open match${openTriviaCount !== 1 ? "es" : ""}`;
 
+  const titleHint =
+    openTitleCount === null
+      ? "Submit the best title for AI-judged literary excerpts"
+      : openTitleCount === 0
+      ? "No open matches yet — create one"
+      : `${openTitleCount} open match${openTitleCount !== 1 ? "es" : ""}`;
+
   return (
     <AuthGuard>
       <main className="min-h-screen p-8">
@@ -96,6 +104,14 @@ export default function DashboardPage() {
           >
             <h2 className="mb-1 text-lg font-semibold">Trivia Royale</h2>
             <p className="text-sm text-gray-400">{triviaHint}</p>
+          </Link>
+
+          <Link
+            href="/title-wars"
+            className="rounded-xl border border-gray-700 p-6 hover:border-indigo-500 hover:bg-gray-900 transition-colors"
+          >
+            <h2 className="mb-1 text-lg font-semibold">Title Wars</h2>
+            <p className="text-sm text-gray-400">{titleHint}</p>
           </Link>
 
           {GAME_STATIC.map((game) => (

@@ -890,6 +890,254 @@ export async function resolveTriviaRound(
   return hash as TxHash;
 }
 
+// ── Title Wars ─────────────────────────────────────────────────────────────
+
+export const TITLE_WARS_ADDRESS =
+  process.env.NEXT_PUBLIC_TITLE_WARS_ADDRESS ??
+  "0x0000000000000000000000000000000000000000";
+
+export const TITLE_STATE_WAITING   = 0;  // lobby, accepting joins
+export const TITLE_STATE_REJECTED  = 1;  // excerpt failed verifiability
+export const TITLE_STATE_OPEN      = 2;  // host started, submissions open
+export const TITLE_STATE_JUDGING   = 3;  // reserved
+export const TITLE_STATE_JUDGED    = 4;  // done, ranking available
+export const TITLE_STATE_CANCELLED = 5;
+
+export interface TitleMatchRaw {
+  id: bigint;
+  host_str: string;
+  excerpt: string;
+  max_players: bigint;
+  players_json: string;
+  titles_json: string;
+  submission_times_json: string;
+  state: bigint;
+  rejection_reason: string;
+  submission_deadline: bigint;
+  ranking_json: string;
+  judge_reasoning_json: string;
+  created_at: bigint;
+}
+
+export interface TitleMatch extends TitleMatchRaw {
+  players: string[];
+  titles: string[];
+  submission_times: number[];
+  ranking: string[];
+  judge_reasoning: string[];
+}
+
+function parseTitleMatch(raw: TitleMatchRaw): TitleMatch {
+  const safeJson = <T>(s: string | undefined, fallback: T): T => {
+    if (!s || s === "[]") return fallback;
+    try { return JSON.parse(s) as T; } catch { return fallback; }
+  };
+  return {
+    ...raw,
+    players: safeJson<string[]>(raw.players_json, []),
+    titles: safeJson<string[]>(raw.titles_json, []),
+    submission_times: safeJson<number[]>(raw.submission_times_json, []),
+    ranking: safeJson<string[]>(raw.ranking_json, []),
+    judge_reasoning: safeJson<string[]>(raw.judge_reasoning_json, []),
+  };
+}
+
+export async function getTitleMatch(matchId: number): Promise<TitleMatch | null> {
+  const client = getGenlayerClient();
+  try {
+    const result = await client.readContract({
+      address: glAddr(TITLE_WARS_ADDRESS),
+      functionName: "get_match",
+      args: [matchId],
+    });
+    if (result === null || result === undefined) return null;
+    return parseTitleMatch(fromMap(result) as TitleMatchRaw);
+  } catch {
+    return null;
+  }
+}
+
+export async function getOpenTitleMatches(limit: number): Promise<number[]> {
+  const client = getGenlayerClient();
+  try {
+    const result = await client.readContract({
+      address: glAddr(TITLE_WARS_ADDRESS),
+      functionName: "get_open_matches",
+      args: [limit],
+    });
+    return ((result as bigint[]) ?? []).map(Number);
+  } catch {
+    return [];
+  }
+}
+
+export async function getJudgedTitleMatches(limit: number): Promise<number[]> {
+  const client = getGenlayerClient();
+  try {
+    const result = await client.readContract({
+      address: glAddr(TITLE_WARS_ADDRESS),
+      functionName: "get_judged_matches",
+      args: [limit],
+    });
+    return ((result as bigint[]) ?? []).map(Number);
+  } catch {
+    return [];
+  }
+}
+
+export async function getTitleMatchesForPlayer(playerAddress: string): Promise<number[]> {
+  const client = getGenlayerClient();
+  try {
+    const result = await client.readContract({
+      address: glAddr(TITLE_WARS_ADDRESS),
+      functionName: "get_matches_for_player",
+      args: [playerAddress],
+    });
+    return ((result as bigint[]) ?? []).map(Number);
+  } catch {
+    return [];
+  }
+}
+
+async function getNextTitleMatchId(): Promise<number> {
+  const client = getGenlayerClient();
+  try {
+    const result = await client.readContract({
+      address: glAddr(TITLE_WARS_ADDRESS),
+      functionName: "get_next_match_id",
+      args: [],
+    });
+    return Number(result as bigint);
+  } catch {
+    return 0;
+  }
+}
+
+export async function createTitleWarsMatch(
+  excerpt: string,
+  maxPlayers: number,
+  wallet: ActiveWallet
+): Promise<{ matchId: number; txHash: TxHash }> {
+  if (!wallet) throw new Error("No wallet found");
+  const prevIds = await getTitleMatchesForPlayer(wallet.address);
+  const prevMax = prevIds.length > 0 ? Math.max(...prevIds) : -1;
+  const client = await clientFromWallet(wallet);
+  const hash = await client.writeContract({
+    address: glAddr(TITLE_WARS_ADDRESS),
+    functionName: "create_match",
+    args: [excerpt, maxPlayers],
+    value: BigInt(0),
+  });
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await client.waitForTransactionReceipt({ hash, status: "ACCEPTED" as any, retries: 60 });
+  } catch {
+    let found = false;
+    for (let i = 0; i < 400; i++) {
+      const ids = await getTitleMatchesForPlayer(wallet.address);
+      if (ids.length > 0 && Math.max(...ids) > prevMax) { found = true; break; }
+      await new Promise((r) => setTimeout(r, 3000));
+    }
+    if (!found) throw new Error("createTitleWarsMatch: timed out waiting for match to appear on-chain");
+  }
+  const matchIds = await getTitleMatchesForPlayer(wallet.address);
+  const newMax = matchIds.length > 0 ? Math.max(...matchIds) : -1;
+  if (newMax <= prevMax) throw new Error("createTitleWarsMatch: no new match found after tx");
+  return { matchId: newMax, txHash: hash as TxHash };
+}
+
+export async function joinTitleWarsMatch(
+  matchId: number,
+  wallet: ActiveWallet
+): Promise<TxHash> {
+  if (!wallet) throw new Error("No wallet found");
+  const client = await clientFromWallet(wallet);
+  const hash = await client.writeContract({
+    address: glAddr(TITLE_WARS_ADDRESS),
+    functionName: "join_match",
+    args: [matchId],
+    value: BigInt(0),
+  });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await client.waitForTransactionReceipt({ hash, status: "ACCEPTED" as any, retries: 30 });
+  return hash as TxHash;
+}
+
+export async function startTitleWarsMatch(
+  matchId: number,
+  wallet: ActiveWallet
+): Promise<TxHash> {
+  if (!wallet) throw new Error("No wallet found");
+  const client = await clientFromWallet(wallet);
+  const hash = await client.writeContract({
+    address: glAddr(TITLE_WARS_ADDRESS),
+    functionName: "start_match",
+    args: [matchId],
+    value: BigInt(0),
+  });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await client.waitForTransactionReceipt({ hash, status: "ACCEPTED" as any, retries: 30 });
+  return hash as TxHash;
+}
+
+export async function submitTitle(
+  matchId: number,
+  title: string,
+  wallet: ActiveWallet
+): Promise<TxHash> {
+  if (!wallet) throw new Error("No wallet found");
+  const client = await clientFromWallet(wallet);
+  const hash = await client.writeContract({
+    address: glAddr(TITLE_WARS_ADDRESS),
+    functionName: "submit_title",
+    args: [matchId, title],
+    value: BigInt(0),
+  });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await client.waitForTransactionReceipt({ hash, status: "ACCEPTED" as any, retries: 30 });
+  return hash as TxHash;
+}
+
+export async function judgeTitleMatch(
+  matchId: number,
+  wallet: ActiveWallet
+): Promise<TxHash> {
+  if (!wallet) throw new Error("No wallet found");
+  const client = await clientFromWallet(wallet);
+  const hash = await client.writeContract({
+    address: glAddr(TITLE_WARS_ADDRESS),
+    functionName: "judge_match",
+    args: [matchId],
+    value: BigInt(0),
+  });
+  // AI ranking takes 1-3 minutes; use 100 retries
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await client.waitForTransactionReceipt({ hash, status: "ACCEPTED" as any, retries: 100 });
+  for (let i = 0; i < 60; i++) {
+    const m = await getTitleMatch(matchId);
+    if (m && Number(m.state) === TITLE_STATE_JUDGED) break;
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+  return hash as TxHash;
+}
+
+export async function cancelTitleMatch(
+  matchId: number,
+  wallet: ActiveWallet
+): Promise<TxHash> {
+  if (!wallet) throw new Error("No wallet found");
+  const client = await clientFromWallet(wallet);
+  const hash = await client.writeContract({
+    address: glAddr(TITLE_WARS_ADDRESS),
+    functionName: "cancel_match",
+    args: [matchId],
+    value: BigInt(0),
+  });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await client.waitForTransactionReceipt({ hash, status: "ACCEPTED" as any, retries: 30 });
+  return hash as TxHash;
+}
+
 export async function cancelTriviaMatch(
   matchId: number,
   wallet: ActiveWallet

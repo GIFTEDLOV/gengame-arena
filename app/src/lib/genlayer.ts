@@ -11,7 +11,7 @@ function glAddr(a: string): GLAddress {
 
 export const USER_REGISTRY_ADDRESS =
   process.env.NEXT_PUBLIC_USER_REGISTRY_ADDRESS ??
-  "0x900cCC8eAcD9E777683877eb9E11FB23c3b5d24e";
+  "0x1e92C61815c91753129992E3c0455Db1364798b7";
 
 export const PROMPT_WARS_ADDRESS =
   process.env.NEXT_PUBLIC_PROMPT_WARS_ADDRESS ??
@@ -648,7 +648,7 @@ export async function cancelMarketPredictions(
 
 export const TRIVIA_ROYALE_ADDRESS =
   process.env.NEXT_PUBLIC_TRIVIA_ROYALE_ADDRESS ??
-  "0x6C500774ecaD4d495c64F7E2ac631F2f767a0bf3";
+  "0x06B571F13D90dCEDfFca0671A6f81904711A2f8C";
 
 export const TRIVIA_STATE_WAITING     = 0;
 export const TRIVIA_STATE_GENERATING  = 1;

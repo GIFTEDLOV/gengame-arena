@@ -7,7 +7,7 @@ import json as _json
 
 MAX_PLAYERS_CAP = 50
 MAX_TOPIC_LEN   = 80
-NUM_QUESTIONS   = 15
+NUM_QUESTIONS   = 8
 ROUND_SECONDS   = 120   # 2 minutes per round (generous for async testing)
 
 # Match states
@@ -211,10 +211,10 @@ class TriviaRoyale(gl.Contract):
         gen_prompt = (
             f'Generate exactly {NUM_QUESTIONS} trivia questions about: "{m.topic}"\n\n'
             f'Format rules:\n'
-            f'- Questions 1-11: multiple-choice. 4 options labeled "A) ...", "B) ...", "C) ...", "D) ...". '
+            f'- Questions 1-6: multiple-choice. 4 options labeled "A) ...", "B) ...", "C) ...", "D) ...". '
             f'  One correct answer (give just the letter: A, B, C, or D).\n'
-            f'- Questions 12-15: open-ended. Short factual answer. '
-            f'  Give the canonical answer and up to 3 acceptable alternate phrasings.\n'
+            f'- Questions 7-8: open-ended. Short factual answer (1-4 words). '
+            f'  Give the canonical answer and up to 2 acceptable alternate phrasings.\n'
             f'- Start easy (widely known facts), get harder.\n\n'
             f'Return strict JSON only — no markdown, no explanation:\n'
             f'{{"questions": [\n'
@@ -236,7 +236,20 @@ class TriviaRoyale(gl.Contract):
                 lines = stripped.splitlines()
                 lines = [l for l in lines if not l.strip().startswith('```')]
                 stripped = '\n'.join(lines).strip()
-            result = _json.loads(stripped)
+            try:
+                result = _json.loads(stripped)
+            except _json.JSONDecodeError:
+                # AI response was truncated — salvage complete questions from the partial JSON
+                last_close = stripped.rfind('},')
+                if last_close < 0:
+                    last_close = stripped.rfind('}')
+                if last_close > 0:
+                    try:
+                        result = _json.loads(stripped[:last_close + 1] + ']}')
+                    except _json.JSONDecodeError:
+                        result = {"questions": []}
+                else:
+                    result = {"questions": []}
 
         questions = result.get('questions', [])
         if len(questions) < NUM_QUESTIONS:

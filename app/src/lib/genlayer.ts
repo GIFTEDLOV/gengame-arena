@@ -11,15 +11,15 @@ function glAddr(a: string): GLAddress {
 
 export const USER_REGISTRY_ADDRESS =
   process.env.NEXT_PUBLIC_USER_REGISTRY_ADDRESS ??
-  "0x1e92C61815c91753129992E3c0455Db1364798b7";
+  "0x621fd548b15414a70fD1E4C07B746f04dd711aA1";
 
 export const PROMPT_WARS_ADDRESS =
   process.env.NEXT_PUBLIC_PROMPT_WARS_ADDRESS ??
-  "0x712fc5c69DB0DB9F5cb0031B8203b859Bacf4989";
+  "0x752CFef23752b1041C4Ac1F12E3db9f0b1e4D078";
 
 export const PREDICTIONS_ADDRESS =
   process.env.NEXT_PUBLIC_PREDICTIONS_ADDRESS ??
-  "0x8d6d0AcEEA4273469d944aCbeAe53E236FF1ac5b";
+  "0x21F89C508F7366205Ac3C2055EAF033D1Da9321b";
 
 const RPC_URL =
   process.env.NEXT_PUBLIC_GENLAYER_RPC ?? "http://localhost:4000/api";
@@ -648,7 +648,7 @@ export async function cancelMarketPredictions(
 
 export const TRIVIA_ROYALE_ADDRESS =
   process.env.NEXT_PUBLIC_TRIVIA_ROYALE_ADDRESS ??
-  "0x06B571F13D90dCEDfFca0671A6f81904711A2f8C";
+  "0xCcDDc396Fb61a0EC925EF02aAf8dda3012bb697a";
 
 export const TRIVIA_STATE_WAITING     = 0;
 export const TRIVIA_STATE_GENERATING  = 1;
@@ -894,7 +894,7 @@ export async function resolveTriviaRound(
 
 export const TITLE_WARS_ADDRESS =
   process.env.NEXT_PUBLIC_TITLE_WARS_ADDRESS ??
-  "0x0000000000000000000000000000000000000000";
+  "0x55994F18F817c899BC63894670F6405b22958A2c";
 
 export const TITLE_STATE_WAITING   = 0;  // lobby, accepting joins
 export const TITLE_STATE_REJECTED  = 1;  // excerpt failed verifiability

@@ -14,6 +14,7 @@ import {
   isUsernameTaken,
   createPromptWarsMatch,
   joinPromptWarsMatch,
+  startMatch,
   submitPrompt,
   judgeMatch,
   getMatch,
@@ -226,6 +227,14 @@ async function main() {
     }
   } catch (e) {
     fail(10, `getMatch(${matchId}) after join`, e);
+  }
+
+  // Step 10b — host must start the match before submissions are accepted
+  try {
+    await startMatch(matchId, walletA);
+    pass(10, `startMatch(${matchId}, walletA) — match moves to FULL`);
+  } catch (e) {
+    fail(10, `startMatch(${matchId}, walletA)`, e);
   }
 
   // Step 11

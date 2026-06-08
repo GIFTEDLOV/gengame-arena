@@ -514,8 +514,6 @@ def test_judge_match_uses_eq_principle(contract, direct_vm, full_match):
 
 
 def test_judge_match_calls_record_match_on_registry(contract, registry, direct_vm, full_match):
-    captured = []
-
     def _hook(vm, request):
         if "PostMessage" not in request:
             return None
@@ -523,12 +521,8 @@ def test_judge_match_calls_record_match_on_registry(contract, registry, direct_v
         cd = msg.get("calldata", {})
         if not isinstance(cd, dict):
             return {"ok": None}
-        method = cd.get("method")
-        args = cd.get("args", [])
-        if method == "record_match" and len(args) >= 2:
-            player_addr, won = args[0], args[1]
-            registry.record_match(player_addr, won)
-            captured.append((str(player_addr).lower(), bool(won)))
+        if cd.get("method") == "record_match_batch" and cd.get("args"):
+            registry.record_match_batch(cd["args"][0])
         return {"ok": None}
 
     direct_vm._gl_call_hook = _hook
@@ -652,8 +646,6 @@ def test_forfeit_p2_wins_when_only_p2_submitted(contract, registry, direct_vm):
 
 
 def test_forfeit_records_stats(contract, registry, direct_vm, one_submitted_expired):
-    captured = []
-
     def _hook(vm, request):
         if "PostMessage" not in request:
             return None
@@ -661,11 +653,8 @@ def test_forfeit_records_stats(contract, registry, direct_vm, one_submitted_expi
         cd = msg.get("calldata", {})
         if not isinstance(cd, dict):
             return {"ok": None}
-        method = cd.get("method")
-        args = cd.get("args", [])
-        if method == "record_match" and len(args) >= 2:
-            registry.record_match(args[0], args[1])
-            captured.append((str(args[0]).lower(), bool(args[1])))
+        if cd.get("method") == "record_match_batch" and cd.get("args"):
+            registry.record_match_batch(cd["args"][0])
         return {"ok": None}
 
     direct_vm._gl_call_hook = _hook

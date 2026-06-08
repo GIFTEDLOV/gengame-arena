@@ -13,7 +13,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-USER_REGISTRY_ADDRESS = "0xF164Ce02730060F3e8b3b735eFe46abDeEC7308A"
+USER_REGISTRY_ADDRESS = "0x621fd548b15414a70fD1E4C07B746f04dd711aA1"
 
 
 def main():

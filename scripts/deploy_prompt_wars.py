@@ -11,7 +11,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-USER_REGISTRY_ADDRESS = "0x698321Bb07b4536Cdc1DB7e7095eaB554feaE42b"
+USER_REGISTRY_ADDRESS = "0x621fd548b15414a70fD1E4C07B746f04dd711aA1"
 
 
 def main():
@@ -42,7 +42,7 @@ def main():
 
     print(f"Deploying {contract_path.name} to {args.rpc} ...")
     print(f"  user_registry_address = {args.user_registry}")
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, shell=(sys.platform == "win32"))
 
     output = result.stdout + result.stderr
     # Parse contract address from output

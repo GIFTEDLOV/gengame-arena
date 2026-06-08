@@ -216,6 +216,7 @@ async function main() {
   // ── Step 8: Judge match ───────────────────────────────────────────────────
   console.log("\n  Judging match (AI ranking all titles — may take 60-90s)…");
   let judgedMatch: TitleMatch;
+  let t0 = 0; // wall-clock ms when STATE_JUDGED first observed; used by step 14
   try {
     await judgeTitleMatch(matchId!, walletA);
     judgedMatch = await pollUntil(
@@ -223,6 +224,7 @@ async function main() {
       (m) => Number(m.state) === TITLE_STATE_JUDGED,
       300_000,
     );
+    t0 = Date.now();
     pass(8, "Match judged", { state: Number(judgedMatch.state) });
   } catch (err) {
     fail(8, "Judge match", err);
@@ -293,16 +295,50 @@ async function main() {
     fail(13, "Assert: winner quality", err);
   }
 
-  // ── Step 14: Check user stats updated ────────────────────────────────────
-  try {
-    const profileA = await getUserProfile(walletA.address);
-    if (!profileA) throw new Error("Profile A not found");
-    if (Number(profileA.total_matches) < 1) throw new Error("Match not recorded for A");
-    pass(14, "User stats updated", {
-      A: { matches: Number(profileA.total_matches), wins: Number(profileA.total_wins) },
-    });
-  } catch (err) {
-    fail(14, "User stats update", err);
+  // ── Step 14: Measure record_match settlement latency (300s budget) ────────
+  // Each wallet polled independently in parallel; logs every attempt with elapsed time.
+  async function pollStatsLatency(address: string, label: string) {
+    const budgetMs = 300_000;
+    const intervalMs = 1_000;
+    const maxAttempts = Math.floor(budgetMs / intervalMs);
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+      const profile = await getUserProfile(address);
+      const matches = profile ? Number(profile.total_matches) : 0;
+      const wins    = profile ? Number(profile.total_wins)    : 0;
+      console.log(`  [Wallet ${label}] attempt ${attempt} at +${elapsed}s: total_matches=${matches}`);
+      if (matches >= 1) {
+        return { label, settledAt: parseFloat(elapsed), total_matches: matches, total_wins: wins };
+      }
+      if (attempt < maxAttempts) await sleep(intervalMs);
+    }
+    return { label, settledAt: null as number | null, total_matches: 0, total_wins: 0 };
+  }
+
+  console.log(`\n  Polling all 4 wallets for record_match settlement (budget: 300s)…`);
+  const latencyResults = await Promise.all([
+    pollStatsLatency(walletA.address, "A"),
+    pollStatsLatency(walletB.address, "B"),
+    pollStatsLatency(walletC.address, "C"),
+    pollStatsLatency(walletD.address, "D"),
+  ]);
+
+  console.log("\n  Wallet | settled at (s) | total_matches | total_wins");
+  console.log("  " + "-".repeat(54));
+  for (const r of latencyResults) {
+    const settled = r.settledAt !== null ? `${r.settledAt}s` : "TIMED OUT";
+    console.log(`  ${r.label.padEnd(6)} | ${settled.padEnd(14)} | ${String(r.total_matches).padEnd(13)} | ${r.total_wins}`);
+  }
+
+  const allSettled = latencyResults.every(r => r.settledAt !== null);
+  if (allSettled) {
+    pass(14, "All 4 wallets settled within 300s budget", Object.fromEntries(
+      latencyResults.map(r => [r.label, { settledAt: r.settledAt, matches: r.total_matches, wins: r.total_wins }])
+    ));
+  } else {
+    const timedOut = latencyResults.filter(r => r.settledAt === null).map(r => r.label);
+    fail(14, `record_match settlement timed out for: ${timedOut.join(", ")}`,
+      new Error(`${timedOut.join(", ")} never reached total_matches >= 1 within 300s`));
   }
 
   // ── Summary ───────────────────────────────────────────────────────────────

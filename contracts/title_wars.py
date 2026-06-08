@@ -351,8 +351,9 @@ class TitleWars(gl.Contract):
         self.judged_ids_json = self._add_id(self.judged_ids_json, match_id)
 
         registry = gl.get_contract_at(self.user_registry_address)
-        for rank_i, addr in enumerate(ranking_addrs):
-            registry.emit().record_match(Address(addr), rank_i == 0)
+        entries = [{"player": str(addr), "rank": rank_i + 1, "total_players": len(ranking_addrs)}
+                   for rank_i, addr in enumerate(ranking_addrs)]
+        registry.emit().record_match_batch(entries)
 
     @gl.public.write
     def cancel_match(self, match_id: u64) -> None:

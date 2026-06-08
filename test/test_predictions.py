@@ -412,8 +412,6 @@ def test_cannot_predict_after_resolve(contract, direct_vm, binary_ready_to_resol
 
 
 def test_resolve_records_stats(contract, registry, direct_vm, binary_ready_to_resolve):
-    captured = []
-
     def _hook(vm, request):
         if "PostMessage" not in request:
             return None
@@ -421,11 +419,8 @@ def test_resolve_records_stats(contract, registry, direct_vm, binary_ready_to_re
         cd = msg.get("calldata", {})
         if not isinstance(cd, dict):
             return {"ok": None}
-        method = cd.get("method")
-        args = cd.get("args", [])
-        if method == "record_match" and len(args) >= 2:
-            registry.record_match(args[0], args[1])
-            captured.append((str(args[0]).lower(), bool(args[1])))
+        if cd.get("method") == "record_match_batch" and cd.get("args"):
+            registry.record_match_batch(cd["args"][0])
         return {"ok": None}
 
     direct_vm._gl_call_hook = _hook
@@ -433,9 +428,11 @@ def test_resolve_records_stats(contract, registry, direct_vm, binary_ready_to_re
     contract.resolve_market(binary_ready_to_resolve)
     direct_vm._gl_call_hook = None
 
-    assert len(captured) == 3
-    wins = [c for c in captured if c[1]]
-    assert len(wins) == 1
+    alice = registry.get_profile(ALICE_ADDR)
+    bob   = registry.get_profile(BOB_ADDR)
+    carol = registry.get_profile(CAROL_ADDR)
+    assert int(alice.total_matches) + int(bob.total_matches) + int(carol.total_matches) == 3
+    assert int(alice.total_wins) + int(bob.total_wins) + int(carol.total_wins) == 1
 
 
 # ── resolve_market numeric ────────────────────────────────────────────────────

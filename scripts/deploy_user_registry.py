@@ -37,7 +37,7 @@ def main():
     ]
 
     print(f"Deploying {contract_path.name} to {args.rpc} ...")
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, shell=(sys.platform == "win32"))
 
     # Parse contract address from output
     for line in (result.stdout + result.stderr).splitlines():

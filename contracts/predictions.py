@@ -337,8 +337,9 @@ class Predictions(gl.Contract):
 
         if n > 0:
             registry = gl.get_contract_at(self.user_registry_address)
-            for rank_i, addr in enumerate(ranking_addrs):
-                registry.emit().record_match(addr, rank_i == 0)
+            entries = [{"player": str(addr), "rank": rank_i + 1, "total_players": len(ranking_addrs)}
+                       for rank_i, addr in enumerate(ranking_addrs)]
+            registry.emit().record_match_batch(entries)
 
     @gl.public.write
     def cancel_market(self, market_id: u64) -> None:

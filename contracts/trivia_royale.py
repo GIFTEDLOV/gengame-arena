@@ -396,9 +396,12 @@ class TriviaRoyale(gl.Contract):
             ))
             self.active_ids_json = self._remove_id(self.active_ids_json, match_id)
             registry = gl.get_contract_at(self.user_registry_address)
-            for p in players:
-                is_winner = str(p).lower() == str(winner).lower()
-                registry.emit().record_match(p, is_winner)
+            winner_str = str(winner).lower()
+            entries = [{"player": str(p),
+                        "rank": 1 if str(p).lower() == winner_str else 2,
+                        "total_players": len(players)}
+                       for p in players]
+            registry.emit().record_match_batch(entries)
         elif len(survivors) == 0:
             # All wrong — no one eliminated this round; advance without eliminating
             if new_round >= len(questions):
@@ -452,8 +455,11 @@ class TriviaRoyale(gl.Contract):
                     ))
                     self.active_ids_json = self._remove_id(self.active_ids_json, match_id)
                     registry = gl.get_contract_at(self.user_registry_address)
-                    for p in players:
-                        registry.emit().record_match(p, str(p).lower() in survivor_strs)
+                    entries = [{"player": str(p),
+                                "rank": 1 if str(p).lower() in survivor_strs else 2,
+                                "total_players": len(players)}
+                               for p in players]
+                    registry.emit().record_match_batch(entries)
                 else:
                     # Generate another batch of questions so the match can continue
                     self._generate_more_questions(match_id, m, elim_list, new_round)

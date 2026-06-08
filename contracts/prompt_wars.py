@@ -332,8 +332,10 @@ class PromptWars(gl.Contract):
                 submission_deadline=match.submission_deadline,
             ))
             registry = gl.get_contract_at(self.user_registry_address)
-            registry.emit().record_match(players[winner_idx], True)
-            registry.emit().record_match(players[loser_idx], False)
+            registry.emit().record_match_batch([
+                {"player": str(players[winner_idx]), "rank": 1, "total_players": 2},
+                {"player": str(players[loser_idx]),  "rank": 2, "total_players": 2},
+            ])
             return
 
         # ── AI judging: rank all players ────────────────────────────────────
@@ -395,8 +397,9 @@ class PromptWars(gl.Contract):
         ))
 
         registry = gl.get_contract_at(self.user_registry_address)
-        for rank_i, addr in enumerate(ranking_addrs):
-            registry.emit().record_match(addr, rank_i == 0)
+        entries = [{"player": str(addr), "rank": rank_i + 1, "total_players": len(ranking_addrs)}
+                   for rank_i, addr in enumerate(ranking_addrs)]
+        registry.emit().record_match_batch(entries)
 
     @gl.public.write
     def cancel_match(self, match_id: u64) -> None:

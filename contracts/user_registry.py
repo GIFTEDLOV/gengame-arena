@@ -65,21 +65,30 @@ class UserRegistry(gl.Contract):
         )
         self.username_to_address[new_key] = caller
 
-    @gl.public.write
-    def record_match(self, player: Address, won: bool) -> None:
-        # TODO: restrict to whitelisted game contracts once ACL is in place
+    def _record_one(self, player: Address, won: bool) -> None:
         if not isinstance(player, Address):
             player = Address(player)
         if player not in self.profiles:
             raise Exception("Player not registered")
-        old_profile = self.profiles[player]
-        new_wins = u32(int(old_profile.total_wins) + 1) if won else old_profile.total_wins
+        old = self.profiles[player]
         self.profiles[player] = UserProfile(
-            username=old_profile.username,
-            joined_at=old_profile.joined_at,
-            total_matches=u32(int(old_profile.total_matches) + 1),
-            total_wins=new_wins,
+            username=old.username,
+            joined_at=old.joined_at,
+            total_matches=u32(int(old.total_matches) + 1),
+            total_wins=u32(int(old.total_wins) + 1) if won else old.total_wins,
         )
+
+    @gl.public.write
+    def record_match(self, player: Address, won: bool) -> None:
+        # TODO: restrict to whitelisted game contracts once ACL is in place
+        self._record_one(player, won)
+
+    @gl.public.write
+    def record_match_batch(self, entries: list) -> None:
+        for entry in entries:
+            player = entry["player"]
+            rank = int(entry["rank"])
+            self._record_one(player, rank == 1)
 
     @gl.public.view
     def get_profile(self, addr: Address) -> Optional[UserProfile]:

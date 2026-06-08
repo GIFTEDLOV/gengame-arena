@@ -3,6 +3,7 @@ import pytest
 ALICE_ADDR = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 BOB_ADDR   = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 CAROL_ADDR = "0xcccccccccccccccccccccccccccccccccccccccc"
+DAVE_ADDR  = "0xdddddddddddddddddddddddddddddddddddddddd"
 
 
 @pytest.fixture
@@ -211,3 +212,90 @@ def test_is_username_taken(contract, direct_vm):
     assert contract.is_username_taken("Alice") is True
     assert contract.is_username_taken("alice") is True
     assert contract.is_username_taken("Bob") is False
+
+
+# ---------------------------------------------------------------------------
+# record_match_batch — batch stats update
+# ---------------------------------------------------------------------------
+
+def test_record_match_batch_four_players(contract, direct_vm):
+    for addr, name in [(ALICE_ADDR, "Alice"), (BOB_ADDR, "Bob"),
+                       (CAROL_ADDR, "Carol"), (DAVE_ADDR, "Dave")]:
+        direct_vm.sender = addr
+        contract.register_user(name)
+
+    contract.record_match_batch([
+        {"player": ALICE_ADDR, "rank": 1, "total_players": 4},
+        {"player": BOB_ADDR,   "rank": 2, "total_players": 4},
+        {"player": CAROL_ADDR, "rank": 3, "total_players": 4},
+        {"player": DAVE_ADDR,  "rank": 4, "total_players": 4},
+    ])
+
+    alice = contract.get_profile(ALICE_ADDR)
+    bob   = contract.get_profile(BOB_ADDR)
+    carol = contract.get_profile(CAROL_ADDR)
+    dave  = contract.get_profile(DAVE_ADDR)
+
+    assert alice.total_matches == 1 and alice.total_wins == 1
+    assert bob.total_matches   == 1 and bob.total_wins   == 0
+    assert carol.total_matches == 1 and carol.total_wins == 0
+    assert dave.total_matches  == 1 and dave.total_wins  == 0
+
+
+def test_record_match_batch_single_entry_same_as_record_match(contract, direct_vm):
+    direct_vm.sender = ALICE_ADDR
+    contract.register_user("Alice")
+
+    contract.record_match_batch([{"player": ALICE_ADDR, "rank": 1, "total_players": 1}])
+
+    profile = contract.get_profile(ALICE_ADDR)
+    assert profile.total_matches == 1
+    assert profile.total_wins == 1
+
+
+def test_record_match_batch_empty_list_is_noop(contract, direct_vm):
+    direct_vm.sender = ALICE_ADDR
+    contract.register_user("Alice")
+
+    contract.record_match_batch([])
+
+    profile = contract.get_profile(ALICE_ADDR)
+    assert profile.total_matches == 0
+    assert profile.total_wins == 0
+
+
+def test_record_match_batch_fifty_players(contract, direct_vm):
+    addrs = [f"0x{str(i).zfill(40)}" for i in range(1, 51)]
+    for i, addr in enumerate(addrs):
+        direct_vm.sender = addr
+        contract.register_user(f"player{i+1}")
+
+    entries = [{"player": addr, "rank": i + 1, "total_players": 50}
+               for i, addr in enumerate(addrs)]
+    contract.record_match_batch(entries)
+
+    winner = contract.get_profile(addrs[0])
+    last   = contract.get_profile(addrs[49])
+    assert winner.total_matches == 1 and winner.total_wins == 1
+    assert last.total_matches   == 1 and last.total_wins   == 0
+
+
+def test_record_match_batch_counters_accumulate(contract, direct_vm):
+    direct_vm.sender = ALICE_ADDR
+    contract.register_user("Alice")
+    direct_vm.sender = BOB_ADDR
+    contract.register_user("Bob")
+
+    contract.record_match_batch([
+        {"player": ALICE_ADDR, "rank": 1, "total_players": 2},
+        {"player": BOB_ADDR,   "rank": 2, "total_players": 2},
+    ])
+    contract.record_match_batch([
+        {"player": BOB_ADDR,   "rank": 1, "total_players": 2},
+        {"player": ALICE_ADDR, "rank": 2, "total_players": 2},
+    ])
+
+    alice = contract.get_profile(ALICE_ADDR)
+    bob   = contract.get_profile(BOB_ADDR)
+    assert alice.total_matches == 2 and alice.total_wins == 1
+    assert bob.total_matches   == 2 and bob.total_wins   == 1

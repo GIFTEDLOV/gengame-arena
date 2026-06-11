@@ -61,7 +61,7 @@ class Market:
 
 
 class Predictions(gl.Contract):
-    markets: TreeMap[u64, Market]
+    markets: TreeMap[str, Market]
     next_market_id: u64
     open_ids_json: str     # JSON [int, ...] — IDs of OPEN markets
     resolved_ids_json: str # JSON [int, ...] — IDs of RESOLVED markets
@@ -78,7 +78,7 @@ class Predictions(gl.Contract):
     # ── private helpers ───────────────────────────────────────────────────────
 
     def _save_market(self, market_id: u64, m: Market) -> None:
-        self.markets[market_id] = m
+        self.markets[str(int(market_id))] = m
 
     def _add_to_list(self, list_json: str, market_id: u64) -> str:
         ids = _from_json(list_json)
@@ -115,18 +115,18 @@ class Predictions(gl.Contract):
     @gl.public.write
     def create_market(self, question: str, market_type: u8, resolution_datetime: u64) -> u64:
         if len(question) > 300:
-            raise Exception("Question exceeds 300 characters")
+            raise gl.vm.UserError("Question exceeds 300 characters")
         if int(market_type) not in (0, 1):
-            raise Exception("Invalid market_type: must be 0 (binary) or 1 (numeric)")
+            raise gl.vm.UserError("Invalid market_type: must be 0 (binary) or 1 (numeric)")
 
         now = int(datetime.datetime.now().timestamp())
         res_ts = int(resolution_datetime)
         min_ts = now + MIN_HOURS * 3600
         max_ts = now + MAX_HOURS * 3600
         if res_ts < min_ts:
-            raise Exception("Resolution datetime must be at least 24 hours from now")
+            raise gl.vm.UserError("Resolution datetime must be at least 24 hours from now")
         if res_ts > max_ts:
-            raise Exception("Resolution datetime must be at most 7 days from now")
+            raise gl.vm.UserError("Resolution datetime must be at most 7 days from now")
 
         market_id = self.next_market_id
         res_dt = datetime.datetime.fromtimestamp(res_ts, tz=datetime.timezone.utc)
@@ -142,8 +142,10 @@ class Predictions(gl.Contract):
             f'Start your response with YES or NO.'
         )
 
+        def _run():
+            return gl.nondet.exec_prompt(verify_prompt, response_format='text')
         verify_result = gl.eq_principle.prompt_comparative(
-            lambda: gl.nondet.exec_prompt(verify_prompt, response_format='text'),
+            _run,
             'Both outputs start with YES or both outputs start with NO',
         )
 
@@ -178,18 +180,18 @@ class Predictions(gl.Contract):
 
     @gl.public.write
     def join_and_predict_binary(self, market_id: u64, prediction: bool) -> None:
-        if market_id not in self.markets:
-            raise Exception("Market not found")
-        m = self.markets[market_id]
+        if str(int(market_id)) not in self.markets:
+            raise gl.vm.UserError("Market not found")
+        m = self.markets[str(int(market_id))]
 
         if int(m.state) != int(STATE_OPEN):
-            raise Exception("Market is not open")
+            raise gl.vm.UserError("Market is not open")
         if int(m.market_type) != int(MARKET_TYPE_BINARY):
-            raise Exception("Market is not binary")
+            raise gl.vm.UserError("Market is not binary")
 
         now = int(datetime.datetime.now().timestamp())
         if now >= int(m.resolution_datetime):
-            raise Exception("Prediction deadline has passed")
+            raise gl.vm.UserError("Prediction deadline has passed")
 
         caller = gl.message.sender_address
         players = _json_to_addrs(m.players_json)
@@ -202,7 +204,7 @@ class Predictions(gl.Contract):
             sub_times[idx] = now
         else:
             if len(players) >= MAX_PLAYERS:
-                raise Exception("Market is full")
+                raise gl.vm.UserError("Market is full")
             players.append(caller)
             predictions.append(prediction)
             sub_times.append(now)
@@ -220,20 +222,20 @@ class Predictions(gl.Contract):
 
     @gl.public.write
     def join_and_predict_numeric(self, market_id: u64, prediction: str) -> None:
-        if market_id not in self.markets:
-            raise Exception("Market not found")
-        m = self.markets[market_id]
+        if str(int(market_id)) not in self.markets:
+            raise gl.vm.UserError("Market not found")
+        m = self.markets[str(int(market_id))]
 
         if int(m.state) != int(STATE_OPEN):
-            raise Exception("Market is not open")
+            raise gl.vm.UserError("Market is not open")
         if int(m.market_type) != int(MARKET_TYPE_NUMERIC):
-            raise Exception("Market is not numeric")
+            raise gl.vm.UserError("Market is not numeric")
 
         pred_float = float(prediction)
 
         now = int(datetime.datetime.now().timestamp())
         if now >= int(m.resolution_datetime):
-            raise Exception("Prediction deadline has passed")
+            raise gl.vm.UserError("Prediction deadline has passed")
 
         caller = gl.message.sender_address
         players = _json_to_addrs(m.players_json)
@@ -246,7 +248,7 @@ class Predictions(gl.Contract):
             sub_times[idx] = now
         else:
             if len(players) >= MAX_PLAYERS:
-                raise Exception("Market is full")
+                raise gl.vm.UserError("Market is full")
             players.append(caller)
             predictions.append(pred_float)
             sub_times.append(now)
@@ -264,16 +266,16 @@ class Predictions(gl.Contract):
 
     @gl.public.write
     def resolve_market(self, market_id: u64) -> None:
-        if market_id not in self.markets:
-            raise Exception("Market not found")
-        m = self.markets[market_id]
+        if str(int(market_id)) not in self.markets:
+            raise gl.vm.UserError("Market not found")
+        m = self.markets[str(int(market_id))]
 
         if int(m.state) != int(STATE_OPEN):
-            raise Exception("Market is not open or already resolved")
+            raise gl.vm.UserError("Market is not open or already resolved")
 
         now = int(datetime.datetime.now().timestamp())
         if now < int(m.resolution_datetime):
-            raise Exception("Resolution datetime has not arrived yet")
+            raise gl.vm.UserError("Resolution datetime has not arrived yet")
 
         is_binary  = int(m.market_type) == int(MARKET_TYPE_BINARY)
         res_dt = datetime.datetime.fromtimestamp(int(m.resolution_datetime), tz=datetime.timezone.utc)
@@ -295,8 +297,10 @@ class Predictions(gl.Contract):
             f'Return only valid JSON, no markdown.'
         )
 
+        def _run():
+            return gl.nondet.exec_prompt(resolution_prompt, response_format='json')
         result = gl.eq_principle.prompt_comparative(
-            lambda: gl.nondet.exec_prompt(resolution_prompt, response_format='json'),
+            _run,
             criteria_str,
         )
 
@@ -343,18 +347,18 @@ class Predictions(gl.Contract):
 
     @gl.public.write
     def cancel_market(self, market_id: u64) -> None:
-        if market_id not in self.markets:
-            raise Exception("Market not found")
-        m = self.markets[market_id]
+        if str(int(market_id)) not in self.markets:
+            raise gl.vm.UserError("Market not found")
+        m = self.markets[str(int(market_id))]
 
         if m.creator != gl.message.sender_address:
-            raise Exception("Only the creator can cancel this market")
+            raise gl.vm.UserError("Only the creator can cancel this market")
         if int(m.state) != int(STATE_OPEN):
-            raise Exception("Market is not open")
+            raise gl.vm.UserError("Market is not open")
 
         players = _json_to_addrs(m.players_json)
         if len(players) > 0:
-            raise Exception("Cannot cancel a market that has players")
+            raise gl.vm.UserError("Cannot cancel a market that has players")
 
         self._save_market(market_id, Market(
             id=m.id, creator=m.creator, question=m.question, market_type=m.market_type,
@@ -375,9 +379,9 @@ class Predictions(gl.Contract):
 
     @gl.public.view
     def get_market(self, market_id: u64) -> Optional[Market]:
-        if market_id not in self.markets:
+        if str(int(market_id)) not in self.markets:
             return None
-        return self.markets[market_id]
+        return self.markets[str(int(market_id))]
 
     @gl.public.view
     def get_open_markets(self, limit: u32) -> list[u64]:
@@ -397,7 +401,7 @@ class Predictions(gl.Contract):
             player = Address(player)
         result = []
         for i in range(int(self.next_market_id)):
-            m = self.markets[u64(i)]
+            m = self.markets[str(i)]
             players = _json_to_addrs(m.players_json)
             if self._index_of(players, player) >= 0:
                 result.append(u64(i))

@@ -1,6 +1,7 @@
 "use client";
 
 import AuthGuard from "@/components/AuthGuard";
+import AppShell from "@/components/shell/AppShell";
 import TxButton from "@/components/TxButton";
 import Link from "next/link";
 import { useState, useEffect } from "react";
@@ -103,6 +104,7 @@ export default function PromptWarsPage() {
 
   return (
     <AuthGuard>
+      <AppShell>
       <main className="min-h-screen p-8">
         <div className="mb-8 flex items-center justify-between">
           <div>
@@ -135,6 +137,7 @@ export default function PromptWarsPage() {
                     disabled={!ready}
                     className="flex-1 rounded-lg bg-indigo-600 py-2 font-semibold hover:bg-indigo-500 disabled:opacity-50"
                     pendingLabel="Creating…"
+                    description="Creating Prompt Wars match"
                   >
                     Create
                   </TxButton>
@@ -199,6 +202,7 @@ export default function PromptWarsPage() {
           )}
         </section>
       </main>
+      </AppShell>
     </AuthGuard>
   );
 }

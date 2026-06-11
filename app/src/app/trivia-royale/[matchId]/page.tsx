@@ -345,6 +345,7 @@ export default function TriviaMatchPage() {
                 onClick={async () => { await resolveTriviaRound(matchIdNum, wallet!); }}
                 className="rounded-lg bg-amber-600 px-5 py-2 text-sm font-semibold hover:bg-amber-500"
                 pendingLabel="Resolving round…"
+                description="Resolving Trivia round"
               >
                 Resolve Round
               </TxButton>
@@ -357,6 +358,7 @@ export default function TriviaMatchPage() {
                 onClick={async () => { await resolveTriviaRound(matchIdNum, wallet!); }}
                 className="rounded-lg bg-green-700 px-5 py-2 text-sm font-semibold hover:bg-green-600"
                 pendingLabel="Resolving round…"
+                description="Resolving Trivia round"
               >
                 All answered — Resolve Round
               </TxButton>
@@ -420,6 +422,7 @@ export default function TriviaMatchPage() {
                 disabled={playerCount < 2}
                 className="rounded-lg bg-green-600 px-6 py-2 font-semibold hover:bg-green-500 disabled:opacity-50"
                 pendingLabel="Starting match (AI generating questions…)"
+                description="Starting Trivia Royale match"
               >
                 Start Match
               </TxButton>
@@ -431,6 +434,7 @@ export default function TriviaMatchPage() {
                   onClick={async () => { await cancelTriviaMatch(matchIdNum, wallet!); }}
                   className="rounded-lg border border-red-700 px-4 py-1.5 text-sm text-red-400 hover:bg-red-900/20"
                   pendingLabel="Cancelling…"
+                  description="Cancelling Trivia match"
                 >
                   Cancel match
                 </TxButton>
@@ -443,6 +447,7 @@ export default function TriviaMatchPage() {
               onClick={async () => { await joinTriviaMatch(matchIdNum, wallet!); }}
               className="rounded-lg bg-indigo-600 px-6 py-2 font-semibold hover:bg-indigo-500"
               pendingLabel="Joining…"
+              description="Joining Trivia Royale match"
             >
               Join Match
             </TxButton>
@@ -564,6 +569,7 @@ function ActiveQuestion({
                   onClick={() => submitMC(letter)}
                   className="rounded-xl border border-gray-600 p-4 text-left hover:border-indigo-500 hover:bg-indigo-900/20 transition-colors"
                   pendingLabel="Locking in…"
+                  description="Submitting trivia answer"
                 >
                   <span className="font-bold text-indigo-400 mr-2">{letter})</span>
                   {text}
@@ -591,6 +597,7 @@ function ActiveQuestion({
               disabled={!openAnswer.trim()}
               className="rounded-lg bg-indigo-600 px-5 py-3 font-semibold hover:bg-indigo-500 disabled:opacity-50"
               pendingLabel="Submitting…"
+              description="Submitting trivia answer"
             >
               Submit
             </TxButton>

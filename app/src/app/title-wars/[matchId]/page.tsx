@@ -353,6 +353,7 @@ export default function TitleMatchPage() {
                 disabled={playerCount < 2}
                 className="rounded-lg bg-green-600 px-6 py-2 font-semibold hover:bg-green-500 disabled:opacity-50"
                 pendingLabel="Starting match…"
+                description="Starting Title Wars match"
               >
                 Start Match
               </TxButton>
@@ -364,6 +365,7 @@ export default function TitleMatchPage() {
                   onClick={async () => { await cancelTitleMatch(matchIdNum, wallet!); }}
                   className="rounded-lg border border-red-700 px-4 py-1.5 text-sm text-red-400 hover:bg-red-900/20"
                   pendingLabel="Cancelling…"
+                  description="Cancelling Title Wars match"
                 >
                   Cancel match
                 </TxButton>
@@ -376,6 +378,7 @@ export default function TitleMatchPage() {
               onClick={async () => { await joinTitleWarsMatch(matchIdNum, wallet!); }}
               className="rounded-lg bg-indigo-600 px-6 py-2 font-semibold hover:bg-indigo-500"
               pendingLabel="Joining…"
+              description="Joining Title Wars match"
             >
               Join Match
             </TxButton>
@@ -519,6 +522,7 @@ function OpenSubmissions({
                 disabled={!titleInput.trim()}
                 className="rounded-lg bg-indigo-600 px-5 py-3 font-semibold hover:bg-indigo-500 disabled:opacity-50"
                 pendingLabel="Submitting…"
+                description="Submitting title"
               >
                 Submit
               </TxButton>
@@ -538,6 +542,7 @@ function OpenSubmissions({
             onClick={async () => { await judgeTitleMatch(matchIdNum, wallet!); }}
             className="rounded-lg bg-amber-600 px-5 py-2 text-sm font-semibold hover:bg-amber-500"
             pendingLabel="AI ranking titles… (may take 1-2 min)"
+            description="Judging Title Wars match"
           >
             {allSubmitted ? "All submitted — Judge Match" : "Judge Match"}
           </TxButton>

@@ -224,6 +224,7 @@ export default function MatchPage() {
                 <TxButton
                   onClick={() => joinPromptWarsMatch(matchIdNum, wallet).then(() => { fetchMatch(); })}
                   className="rounded-lg bg-green-600 px-6 py-2 font-semibold hover:bg-green-500 disabled:opacity-50"
+                  description="Joining Prompt Wars match"
                 >
                   Join Match
                 </TxButton>
@@ -234,6 +235,7 @@ export default function MatchPage() {
                   onClick={() => startMatch(matchIdNum, wallet).then(() => { fetchMatch(); })}
                   className="rounded-lg bg-indigo-600 px-6 py-2 font-semibold hover:bg-indigo-500 disabled:opacity-50"
                   pendingLabel="Starting…"
+                  description="Starting Prompt Wars match"
                 >
                   Start Match
                 </TxButton>
@@ -253,6 +255,7 @@ export default function MatchPage() {
               <TxButton
                 onClick={() => cancelMatch(matchIdNum, wallet).then(() => { fetchMatch(); })}
                 className="rounded-lg bg-red-700 px-6 py-2 font-semibold hover:bg-red-600 disabled:opacity-50"
+                description="Cancelling match"
               >
                 Cancel match
               </TxButton>
@@ -288,6 +291,7 @@ export default function MatchPage() {
                     onClick={() => submitPrompt(matchIdNum, prompt, wallet).then(() => { fetchMatch(); })}
                     disabled={prompt.length === 0}
                     className="rounded-lg bg-indigo-600 px-6 py-2 font-semibold hover:bg-indigo-500 disabled:opacity-50"
+                    description="Submitting prompt"
                   >
                     Submit Prompt
                   </TxButton>
@@ -303,6 +307,7 @@ export default function MatchPage() {
                 onClick={() => judgeMatch(matchIdNum, wallet).then(() => { fetchMatch(); })}
                 className="rounded-lg bg-yellow-600 px-6 py-3 font-semibold hover:bg-yellow-500 disabled:opacity-50"
                 pendingLabel="Judging… (this may take a minute)"
+                description="Judging Prompt Wars match"
               >
                 {allSubmitted ? "Judge Now" : deadlinePassed ? "Finalize & Judge" : "Judge Now"}
               </TxButton>

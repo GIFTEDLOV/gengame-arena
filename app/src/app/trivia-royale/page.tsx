@@ -1,6 +1,7 @@
 "use client";
 
 import AuthGuard from "@/components/AuthGuard";
+import AppShell from "@/components/shell/AppShell";
 import TxButton from "@/components/TxButton";
 import Link from "next/link";
 import { useState, useEffect, useCallback } from "react";
@@ -110,6 +111,7 @@ export default function TriviaRoyalePage() {
 
   return (
     <AuthGuard>
+      <AppShell>
       <main className="min-h-screen p-8">
         <div className="mb-6 flex items-center justify-between">
           <h1 className="text-3xl font-bold">Trivia Royale</h1>
@@ -173,6 +175,7 @@ export default function TriviaRoyalePage() {
               disabled={topic.trim().length < 3}
               className="rounded-lg bg-indigo-600 px-6 py-2 font-semibold hover:bg-indigo-500 disabled:opacity-50"
               pendingLabel="Creating match (AI verifying topic…)"
+              description="Creating Trivia Royale match"
             >
               Create Match
             </TxButton>
@@ -247,6 +250,7 @@ export default function TriviaRoyalePage() {
           </section>
         )}
       </main>
+      </AppShell>
     </AuthGuard>
   );
 }

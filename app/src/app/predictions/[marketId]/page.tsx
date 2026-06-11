@@ -273,6 +273,7 @@ export default function MarketPage() {
                   }}
                   disabled={isBinary ? binaryPick === null : numericInput.trim() === ""}
                   className="rounded-lg bg-indigo-600 px-6 py-2 font-semibold hover:bg-indigo-500 disabled:opacity-50"
+                  description="Submitting prediction"
                 >
                   {isPlayer ? "Update prediction" : "Submit prediction"}
                 </TxButton>
@@ -293,6 +294,7 @@ export default function MarketPage() {
                   }}
                   className="rounded-lg bg-amber-600 px-6 py-2 font-semibold hover:bg-amber-500 disabled:opacity-50"
                   pendingLabel="Fetching real-world data via validators…"
+                  description="Resolving prediction market"
                 >
                   Resolve Market
                 </TxButton>
@@ -308,6 +310,7 @@ export default function MarketPage() {
                   fetchMarket();
                 }}
                 className="rounded-lg border border-gray-600 px-4 py-1.5 text-sm text-gray-400 hover:border-red-700 hover:text-red-400 disabled:opacity-40"
+                description="Cancelling market"
               >
                 Cancel market
               </TxButton>

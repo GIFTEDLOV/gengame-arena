@@ -1,6 +1,7 @@
 "use client";
 
 import AuthGuard from "@/components/AuthGuard";
+import AppShell from "@/components/shell/AppShell";
 import TxButton from "@/components/TxButton";
 import Link from "next/link";
 import { useState, useEffect, useCallback } from "react";
@@ -180,6 +181,7 @@ export default function PredictionsPage() {
 
   return (
     <AuthGuard>
+      <AppShell>
       <main className="min-h-screen p-8">
         <div className="mb-6 flex items-center justify-between">
           <h1 className="text-3xl font-bold">Predictions</h1>
@@ -276,6 +278,7 @@ export default function PredictionsPage() {
               disabled={question.trim().length < 10}
               className="rounded-lg bg-indigo-600 px-6 py-2 font-semibold hover:bg-indigo-500 disabled:opacity-50"
               pendingLabel="Creating market (AI verifying…)"
+              description="Creating prediction market"
             >
               Create Market
             </TxButton>
@@ -342,6 +345,7 @@ export default function PredictionsPage() {
           </section>
         )}
       </main>
+      </AppShell>
     </AuthGuard>
   );
 }

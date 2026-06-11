@@ -1,3 +1,62 @@
+@import '../styles/tokens.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Base styles using design tokens */
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-elevated);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: var(--radius-pill);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary);
+}
+
+/* Focus ring using platform accent */
+:focus-visible {
+  outline: 2px solid var(--accent-platform);
+  outline-offset: 2px;
+}
+
+/* Particle animation for landing hero */
+@keyframes float-up {
+  0%   { transform: translateY(0)   scale(1);   opacity: 0.6; }
+  100% { transform: translateY(-80px) scale(0.5); opacity: 0; }
+}
+
+/* Pulse animation for settling indicator */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
+
+/* Bounce for scroll chevron */
+@keyframes bounce-y {
+  0%, 100% { transform: translateY(0); }
+  50%       { transform: translateY(6px); }
+}
+
+.animate-float-up   { animation: float-up  3s var(--ease-out) infinite; }
+.animate-pulse-dot  { animation: pulse-dot 1.5s ease-in-out infinite; }
+.animate-bounce-y   { animation: bounce-y  1.2s ease-in-out infinite; }

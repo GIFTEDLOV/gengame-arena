@@ -1,0 +1,74 @@
+/* Gengame Arena — design tokens (all CSS custom properties) */
+:root {
+  /* ── Colors ─────────────────────────────────────────────── */
+  --bg-base:       #0a0a0f;
+  --bg-elevated:   #14141c;
+  --bg-overlay:    rgba(255, 255, 255, 0.04);
+  --border:        rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --text-primary:  #fafafa;
+  --text-secondary:#a3a3ad;
+  --text-tertiary: #6b6b75;
+  --text-disabled: #404049;
+
+  --accent-platform:    #8b5cf6;
+  --accent-platform-hi: #a78bfa;
+  --accent-platform-lo: #6d28d9;
+
+  --game-prompt-wars: #fbbf24;
+  --game-predictions: #2dd4bf;
+  --game-trivia:      #ec4899;
+  --game-title-wars:  #fef3c7;
+
+  --success: #34d399;
+  --warning: #fbbf24;
+  --danger:  #ef4444;
+
+  /* ── Typography ─────────────────────────────────────────── */
+  /* --font-inter / --font-jetbrains-mono / --font-lora injected by next/font */
+  --font-display: var(--font-inter, "Inter"), system-ui, sans-serif;
+  --font-body:    var(--font-inter, "Inter"), system-ui, sans-serif;
+  --font-mono:    var(--font-jetbrains-mono, "JetBrains Mono"), monospace;
+  --font-serif:   var(--font-lora, "Lora"), Georgia, serif;
+
+  --text-xs:   clamp(0.75rem,  0.7rem   + 0.15vw, 0.85rem);
+  --text-sm:   clamp(0.875rem, 0.825rem + 0.2vw,  0.95rem);
+  --text-base: clamp(1rem,     0.95rem  + 0.25vw, 1.1rem);
+  --text-lg:   clamp(1.125rem, 1.05rem  + 0.4vw,  1.35rem);
+  --text-xl:   clamp(1.5rem,   1.35rem  + 0.75vw, 1.875rem);
+  --text-2xl:  clamp(2rem,     1.7rem   + 1.5vw,  3rem);
+  --text-hero: clamp(2.5rem,   2rem     + 2.5vw,  4.5rem);
+
+  /* ── Spacing (8-pt grid) ──────────────────────────────── */
+  --space-1:  0.25rem;
+  --space-2:  0.5rem;
+  --space-3:  0.75rem;
+  --space-4:  1rem;
+  --space-6:  1.5rem;
+  --space-8:  2rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+  --space-24: 6rem;
+
+  /* ── Radius ──────────────────────────────────────────── */
+  --radius-sm:   6px;
+  --radius:      10px;
+  --radius-md:   14px;
+  --radius-lg:   20px;
+  --radius-pill: 9999px;
+
+  /* ── Shadow / Glow ───────────────────────────────────── */
+  --shadow-card:  0 8px 32px rgba(0, 0, 0, 0.4), 0 0 0 1px var(--border);
+  --shadow-hover: 0 16px 48px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--border-strong);
+  --glow-accent:  0 0 24px var(--accent-platform-lo);
+
+  /* ── Motion ──────────────────────────────────────────── */
+  --ease-out:        cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring:     cubic-bezier(0.34, 1.56, 0.64, 1);
+  --duration-fast:   150ms;
+  --duration-normal: 240ms;
+  --duration-slow:   400ms;
+
+  /* ── Layout ──────────────────────────────────────────── */
+  --header-height: 64px;
+}

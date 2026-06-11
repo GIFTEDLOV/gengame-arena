@@ -16,6 +16,7 @@ import {
   registerUser,
   createPromptWarsMatch,
   joinPromptWarsMatch,
+  startMatch,
   submitPrompt,
   judgeMatch,
   getMatch,
@@ -91,6 +92,10 @@ async function main() {
   console.log("Joining as walletB...");
   await joinPromptWarsMatch(matchId, walletB);
   console.log("Joined.\n");
+
+  console.log("Starting match (walletA as host)...");
+  await startMatch(matchId, walletA);
+  console.log("Match started — 5-minute clock running.\n");
 
   // ── Submit prompts — A is on-target; B is deliberately off-topic so all
   //    validators agree on a winner (preventing MAJORITY_DISAGREE on close calls)

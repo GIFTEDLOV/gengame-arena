@@ -1,4 +1,4 @@
-"""
+﻿"""
 Deploy contracts/trivia_royale.py to GenLayer localnet and print the contract address.
 
 Usage:
@@ -13,7 +13,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-USER_REGISTRY_ADDRESS = "0x621fd548b15414a70fD1E4C07B746f04dd711aA1"
+USER_REGISTRY_ADDRESS = "0x8704aBA88217a076292bd2Fd3945eb49E4Fc2448"
 
 
 def main():
@@ -84,3 +84,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

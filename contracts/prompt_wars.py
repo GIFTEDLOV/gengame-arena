@@ -95,7 +95,7 @@ class Match:
 
 
 class PromptWars(gl.Contract):
-    matches: TreeMap[u64, Match]
+    matches: TreeMap[str, Match]
     next_match_id: u64
     user_registry_address: Address
 
@@ -114,7 +114,7 @@ class PromptWars(gl.Contract):
         return -1
 
     def _save_match(self, match_id: u64, m: Match) -> None:
-        self.matches[match_id] = m
+        self.matches[str(int(match_id))] = m
 
     def _start_clock(
         self,
@@ -146,9 +146,9 @@ class PromptWars(gl.Contract):
     @gl.public.write
     def create_match(self, max_players: u32 = u32(50)) -> u64:
         if int(max_players) < 2:
-            raise Exception("max_players must be at least 2")
+            raise gl.vm.UserError("max_players must be at least 2")
         if int(max_players) > MAX_PLAYERS_CAP:
-            raise Exception("max_players cannot exceed 50")
+            raise gl.vm.UserError("max_players cannot exceed 50")
 
         caller = gl.message.sender_address
         now = int(datetime.datetime.now().timestamp())
@@ -179,22 +179,21 @@ class PromptWars(gl.Contract):
     @gl.public.write
     def join_match(self, match_id: u64) -> None:
         caller = gl.message.sender_address
-        if match_id not in self.matches:
-            raise Exception("Match not found")
-        match = self.matches[match_id]
+        if str(int(match_id)) not in self.matches:
+            raise gl.vm.UserError("Match not found")
+        match = self.matches[str(int(match_id))]
 
         if int(match.state) != int(STATE_WAITING):
-            raise Exception("Match is not open for joining")
+            raise gl.vm.UserError("Match is not open for joining")
 
         players = _json_to_addrs(match.players_json)
         prompts = _json_to_strs(match.prompts_json)
         outputs = _json_to_strs(match.outputs_json)
-        ranking = _json_to_addrs(match.ranking_json)
 
         if len(players) >= int(match.max_players):
-            raise Exception("Match is full")
+            raise gl.vm.UserError("Match is full")
         if self._index_of(players, caller) >= 0:
-            raise Exception("Already joined this match")
+            raise gl.vm.UserError("Already joined this match")
 
         players.append(caller)
         prompts.append("")
@@ -218,12 +217,12 @@ class PromptWars(gl.Contract):
     def start_match(self, match_id: u64) -> None:
         """Only the host (players[0]) can start the match."""
         caller = gl.message.sender_address
-        if match_id not in self.matches:
-            raise Exception("Match not found")
-        match = self.matches[match_id]
+        if str(int(match_id)) not in self.matches:
+            raise gl.vm.UserError("Match not found")
+        match = self.matches[str(int(match_id))]
 
         if int(match.state) != int(STATE_WAITING):
-            raise Exception("Match has already started or is finished")
+            raise gl.vm.UserError("Match has already started or is finished")
 
         players = _json_to_addrs(match.players_json)
         prompts = _json_to_strs(match.prompts_json)
@@ -231,34 +230,34 @@ class PromptWars(gl.Contract):
         ranking = _json_to_addrs(match.ranking_json)
 
         if len(players) < 2:
-            raise Exception("Need at least 2 players to start")
+            raise gl.vm.UserError("Need at least 2 players to start")
         if players[0] != caller:
-            raise Exception("Only the host can start the match")
+            raise gl.vm.UserError("Only the host can start the match")
 
         self._start_clock(match_id, match, players, prompts, outputs, ranking)
 
     @gl.public.write
     def submit_prompt(self, match_id: u64, prompt: str) -> None:
         caller = gl.message.sender_address
-        if match_id not in self.matches:
-            raise Exception("Match not found")
-        match = self.matches[match_id]
+        if str(int(match_id)) not in self.matches:
+            raise gl.vm.UserError("Match not found")
+        match = self.matches[str(int(match_id))]
 
         if int(match.state) != int(STATE_FULL):
-            raise Exception("Match is not in submission phase")
+            raise gl.vm.UserError("Match is not in submission phase")
 
         players = _json_to_addrs(match.players_json)
         prompts = _json_to_strs(match.prompts_json)
 
         idx = self._index_of(players, caller)
         if idx < 0:
-            raise Exception("Not a player in this match")
+            raise gl.vm.UserError("Not a player in this match")
         if len(prompt) > 500:
-            raise Exception("Prompt exceeds 500 characters")
+            raise gl.vm.UserError("Prompt exceeds 500 characters")
 
         now = int(datetime.datetime.now().timestamp())
         if int(match.submission_deadline) != 0 and now > int(match.submission_deadline):
-            raise Exception("Submission deadline passed")
+            raise gl.vm.UserError("Submission deadline passed")
 
         prompts[idx] = prompt
         self._save_match(match_id, Match(
@@ -277,12 +276,12 @@ class PromptWars(gl.Contract):
 
     @gl.public.write
     def judge_match(self, match_id: u64) -> None:
-        if match_id not in self.matches:
-            raise Exception("Match not found")
-        match = self.matches[match_id]
+        if str(int(match_id)) not in self.matches:
+            raise gl.vm.UserError("Match not found")
+        match = self.matches[str(int(match_id))]
 
         if int(match.state) != int(STATE_FULL):
-            raise Exception("Match is not in a judgeable state")
+            raise gl.vm.UserError("Match is not in a judgeable state")
 
         players = _json_to_addrs(match.players_json)
         prompts = _json_to_strs(match.prompts_json)
@@ -294,7 +293,7 @@ class PromptWars(gl.Contract):
         num_submitted = sum(submitted)
 
         if not deadline_passed and num_submitted < n:
-            raise Exception("Waiting for all players to submit or deadline to pass")
+            raise gl.vm.UserError("Waiting for all players to submit or deadline to pass")
 
         # ── No-contest ──────────────────────────────────────────────────────
         if num_submitted == 0:
@@ -360,8 +359,10 @@ class PromptWars(gl.Contract):
             f'"reasoning": "brief explanation of ranking"}}'
         )
 
+        def _run():
+            return gl.nondet.exec_prompt(judge_prompt, response_format='json')
         result = gl.eq_principle.prompt_comparative(
-            lambda: gl.nondet.exec_prompt(judge_prompt, response_format='json'),
+            _run,
             'The "ranking" list (the ordered sequence of 1-based player numbers) is identical in both JSON outputs',
         )
 
@@ -405,19 +406,19 @@ class PromptWars(gl.Contract):
     def cancel_match(self, match_id: u64) -> None:
         """Cancel a match still waiting for players (creator only, 5+ min after create)."""
         caller = gl.message.sender_address
-        if match_id not in self.matches:
-            raise Exception("Match not found")
-        match = self.matches[match_id]
+        if str(int(match_id)) not in self.matches:
+            raise gl.vm.UserError("Match not found")
+        match = self.matches[str(int(match_id))]
 
         players = _json_to_addrs(match.players_json)
         if players[0] != caller:
-            raise Exception("Only the match creator can cancel")
+            raise gl.vm.UserError("Only the match creator can cancel")
         if int(match.state) != int(STATE_WAITING):
-            raise Exception("Can only cancel a match that is still waiting for players")
+            raise gl.vm.UserError("Can only cancel a match that is still waiting for players")
 
         now = int(datetime.datetime.now().timestamp())
         if now <= int(match.created_at) + 300:
-            raise Exception("Can only cancel after the deadline has passed")
+            raise gl.vm.UserError("Can only cancel after the deadline has passed")
 
         self._save_match(match_id, Match(
             id=match.id,
@@ -437,9 +438,9 @@ class PromptWars(gl.Contract):
 
     @gl.public.view
     def get_match(self, match_id: u64) -> Optional[Match]:
-        if match_id not in self.matches:
+        if str(int(match_id)) not in self.matches:
             return None
-        return self.matches[match_id]
+        return self.matches[str(int(match_id))]
 
     @gl.public.view
     def get_recent_matches(self, limit: u32) -> list[Match]:
@@ -448,7 +449,7 @@ class PromptWars(gl.Contract):
         result = []
         start = max(0, total - limit_int)
         for i in range(total - 1, start - 1, -1):
-            result.append(self.matches[u64(i)])
+            result.append(self.matches[str(i)])
         return result
 
     @gl.public.view
@@ -457,7 +458,7 @@ class PromptWars(gl.Contract):
             player = Address(player)
         result = []
         for i in range(int(self.next_match_id)):
-            match = self.matches[u64(i)]
+            match = self.matches[str(i)]
             players = _json_to_addrs(match.players_json)
             if self._index_of(players, player) >= 0:
                 result.append(u64(i))

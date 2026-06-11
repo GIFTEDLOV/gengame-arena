@@ -105,7 +105,7 @@ export default function PromptWarsPage() {
   return (
     <AuthGuard>
       <AppShell>
-      <main className="min-h-screen p-8">
+      <main className="min-h-screen p-4 sm:p-8">
         <div className="mb-8 flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold">Prompt Wars</h1>

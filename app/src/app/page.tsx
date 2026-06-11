@@ -431,8 +431,8 @@ export default function LandingPage() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 relative">
             {/* Connector line on desktop */}
             <div
-              className="hidden sm:block absolute top-8 left-1/6 right-1/6 h-px"
-              style={{ backgroundColor: "var(--border)" }}
+              className="hidden sm:block absolute top-8 h-px"
+              style={{ left: "16.67%", right: "16.67%", backgroundColor: "var(--border)" }}
               aria-hidden
             />
             {HOW_STEPS.map((s) => (

@@ -1,7 +1,7 @@
 import { createClient } from "genlayer-js";
 
 const RPC = "http://localhost:4000/api";
-const REGISTRY = "0xF164Ce02730060F3e8b3b735eFe46abDeEC7308A";
+const REGISTRY = "0x8704aBA88217a076292bd2Fd3945eb49E4Fc2448";
 type GL = `0x${string}` & { length: 42 };
 
 async function main() {

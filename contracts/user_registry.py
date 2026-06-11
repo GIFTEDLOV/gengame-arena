@@ -23,19 +23,19 @@ class UserRegistry(gl.Contract):
 
     def _validate_username(self, username: str) -> None:
         if not (3 <= len(username) <= 20):
-            raise Exception("Username must be between 3 and 20 characters")
+            raise gl.vm.UserError("Username must be between 3 and 20 characters")
         if not re.match(r'^[a-zA-Z0-9_]+$', username):
-            raise Exception("Username may only contain letters, numbers, and underscores")
+            raise gl.vm.UserError("Username may only contain letters, numbers, and underscores")
 
     @gl.public.write
     def register_user(self, username: str) -> None:
         caller = gl.message.sender_address
         if caller in self.profiles:
-            raise Exception("Address already registered")
+            raise gl.vm.UserError("Address already registered")
         self._validate_username(username)
         key = username.lower()
         if key in self.username_to_address:
-            raise Exception("Username already taken")
+            raise gl.vm.UserError("Username already taken")
         # TODO: replace u64(0) with block timestamp once GenLayer context API is confirmed
         self.profiles[caller] = UserProfile(
             username=username,
@@ -49,11 +49,11 @@ class UserRegistry(gl.Contract):
     def update_username(self, new_username: str) -> None:
         caller = gl.message.sender_address
         if caller not in self.profiles:
-            raise Exception("Address not registered")
+            raise gl.vm.UserError("Address not registered")
         self._validate_username(new_username)
         new_key = new_username.lower()
         if new_key in self.username_to_address:
-            raise Exception("Username already taken")
+            raise gl.vm.UserError("Username already taken")
         old_profile = self.profiles[caller]
         old_key = old_profile.username.lower()
         del self.username_to_address[old_key]
@@ -69,7 +69,7 @@ class UserRegistry(gl.Contract):
         if not isinstance(player, Address):
             player = Address(player)
         if player not in self.profiles:
-            raise Exception("Player not registered")
+            raise gl.vm.UserError("Player not registered")
         old = self.profiles[player]
         self.profiles[player] = UserProfile(
             username=old.username,

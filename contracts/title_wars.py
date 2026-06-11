@@ -69,7 +69,7 @@ class TitleMatch:
 
 
 class TitleWars(gl.Contract):
-    matches: TreeMap[u64, TitleMatch]
+    matches: TreeMap[str, TitleMatch]
     next_match_id: u64
     open_ids_json: str     # JSON [u64] matches in WAITING state
     judged_ids_json: str   # JSON [u64] matches in JUDGED state
@@ -86,7 +86,7 @@ class TitleWars(gl.Contract):
     # ── helpers ───────────────────────────────────────────────────────────────
 
     def _save(self, mid: u64, m: TitleMatch) -> None:
-        self.matches[mid] = m
+        self.matches[str(int(mid))] = m
 
     def _index_of(self, lst: list, addr: Address) -> int:
         for i, a in enumerate(lst):
@@ -117,11 +117,11 @@ class TitleWars(gl.Contract):
     @gl.public.write
     def create_match(self, excerpt: str, max_players: u32 = u32(50)) -> u64:
         if len(excerpt) < MIN_EXCERPT_LEN or len(excerpt) > MAX_EXCERPT_LEN:
-            raise Exception(f"Excerpt must be {MIN_EXCERPT_LEN}–{MAX_EXCERPT_LEN} characters")
+            raise gl.vm.UserError(f"Excerpt must be {MIN_EXCERPT_LEN}–{MAX_EXCERPT_LEN} characters")
         if int(max_players) < 2:
-            raise Exception("max_players must be at least 2")
+            raise gl.vm.UserError("max_players must be at least 2")
         if int(max_players) > MAX_PLAYERS_CAP:
-            raise Exception(f"max_players cannot exceed {MAX_PLAYERS_CAP}")
+            raise gl.vm.UserError(f"max_players cannot exceed {MAX_PLAYERS_CAP}")
 
         caller = gl.message.sender_address
         now = int(datetime.datetime.now().timestamp())
@@ -132,8 +132,10 @@ class TitleWars(gl.Contract):
             f'Text:\n"""\n{excerpt}\n"""\n\n'
             f'Start your response with YES or NO, then one sentence of explanation.'
         )
+        def _run():
+            return gl.nondet.exec_prompt(verify_prompt, response_format='text')
         verify_result = gl.eq_principle.prompt_comparative(
-            lambda: gl.nondet.exec_prompt(verify_prompt, response_format='text'),
+            _run,
             'Both outputs start with YES or both outputs start with NO',
         )
         accepted = str(verify_result).strip().upper().startswith("YES")
@@ -179,16 +181,16 @@ class TitleWars(gl.Contract):
     @gl.public.write
     def join_match(self, match_id: u64) -> None:
         caller = gl.message.sender_address
-        if match_id not in self.matches:
-            raise Exception("Match not found")
-        m = self.matches[match_id]
+        if str(int(match_id)) not in self.matches:
+            raise gl.vm.UserError("Match not found")
+        m = self.matches[str(int(match_id))]
         if int(m.state) != int(STATE_WAITING):
-            raise Exception("Match is not open for joining")
+            raise gl.vm.UserError("Match is not open for joining")
         players = _json_to_addrs(m.players_json)
         if len(players) >= int(m.max_players):
-            raise Exception("Match is full")
+            raise gl.vm.UserError("Match is full")
         if self._index_of(players, caller) >= 0:
-            raise Exception("Already joined this match")
+            raise gl.vm.UserError("Already joined this match")
         players.append(caller)
         titles = _json_to_strs(m.titles_json)
         titles.append("")
@@ -209,16 +211,16 @@ class TitleWars(gl.Contract):
     @gl.public.write
     def start_match(self, match_id: u64) -> None:
         caller = gl.message.sender_address
-        if match_id not in self.matches:
-            raise Exception("Match not found")
-        m = self.matches[match_id]
+        if str(int(match_id)) not in self.matches:
+            raise gl.vm.UserError("Match not found")
+        m = self.matches[str(int(match_id))]
         if int(m.state) != int(STATE_WAITING):
-            raise Exception("Match has already started or is finished")
+            raise gl.vm.UserError("Match has already started or is finished")
         if str(caller).lower() != m.host_str:
-            raise Exception("Only the host can start the match")
+            raise gl.vm.UserError("Only the host can start the match")
         players = _json_to_addrs(m.players_json)
         if len(players) < 2:
-            raise Exception("Need at least 2 players to start")
+            raise gl.vm.UserError("Need at least 2 players to start")
         now = int(datetime.datetime.now().timestamp())
         deadline = now + SUBMISSION_SECS
         self._save(match_id, TitleMatch(
@@ -237,20 +239,20 @@ class TitleWars(gl.Contract):
     @gl.public.write
     def submit_title(self, match_id: u64, title: str) -> None:
         caller = gl.message.sender_address
-        if match_id not in self.matches:
-            raise Exception("Match not found")
-        m = self.matches[match_id]
+        if str(int(match_id)) not in self.matches:
+            raise gl.vm.UserError("Match not found")
+        m = self.matches[str(int(match_id))]
         if int(m.state) != int(STATE_OPEN):
-            raise Exception("Match is not accepting submissions")
+            raise gl.vm.UserError("Match is not accepting submissions")
         if len(title) > MAX_TITLE_LEN:
-            raise Exception(f"Title must be at most {MAX_TITLE_LEN} characters")
+            raise gl.vm.UserError(f"Title must be at most {MAX_TITLE_LEN} characters")
         players = _json_to_addrs(m.players_json)
         idx = self._index_of(players, caller)
         if idx < 0:
-            raise Exception("You are not a player in this match")
+            raise gl.vm.UserError("You are not a player in this match")
         now = int(datetime.datetime.now().timestamp())
         if int(m.submission_deadline) > 0 and now > int(m.submission_deadline):
-            raise Exception("Submission deadline has passed")
+            raise gl.vm.UserError("Submission deadline has passed")
         titles = _json_to_strs(m.titles_json)
         times = _json_to_ints(m.submission_times_json)
         titles[idx] = title
@@ -269,11 +271,11 @@ class TitleWars(gl.Contract):
 
     @gl.public.write
     def judge_match(self, match_id: u64) -> None:
-        if match_id not in self.matches:
-            raise Exception("Match not found")
-        m = self.matches[match_id]
+        if str(int(match_id)) not in self.matches:
+            raise gl.vm.UserError("Match not found")
+        m = self.matches[str(int(match_id))]
         if int(m.state) != int(STATE_OPEN):
-            raise Exception("Match is not in a judgeable state")
+            raise gl.vm.UserError("Match is not in a judgeable state")
 
         players = _json_to_addrs(m.players_json)
         titles = _json_to_strs(m.titles_json)
@@ -284,7 +286,7 @@ class TitleWars(gl.Contract):
         all_submitted = all(t != "" for t in titles)
 
         if not deadline_passed and not all_submitted:
-            raise Exception("Waiting for all players to submit or deadline to pass")
+            raise gl.vm.UserError("Waiting for all players to submit or deadline to pass")
 
         # Build the judge prompt
         title_lines = []
@@ -308,8 +310,10 @@ class TitleWars(gl.Contract):
             f'"reasoning": ["one sentence per rank position in ranking order"]}}'
         )
 
+        def _run():
+            return gl.nondet.exec_prompt(judge_prompt, response_format='text')
         result = gl.eq_principle.prompt_comparative(
-            lambda: gl.nondet.exec_prompt(judge_prompt, response_format='text'),
+            _run,
             'The "ranking" list (the ordered sequence of 1-based player numbers) is identical in both JSON outputs',
         )
 
@@ -358,13 +362,13 @@ class TitleWars(gl.Contract):
     @gl.public.write
     def cancel_match(self, match_id: u64) -> None:
         caller = gl.message.sender_address
-        if match_id not in self.matches:
-            raise Exception("Match not found")
-        m = self.matches[match_id]
+        if str(int(match_id)) not in self.matches:
+            raise gl.vm.UserError("Match not found")
+        m = self.matches[str(int(match_id))]
         if int(m.state) != int(STATE_WAITING):
-            raise Exception("Can only cancel a match that is waiting for players")
+            raise gl.vm.UserError("Can only cancel a match that is waiting for players")
         if str(caller).lower() != m.host_str:
-            raise Exception("Only the host can cancel")
+            raise gl.vm.UserError("Only the host can cancel")
         self._save(match_id, TitleMatch(
             id=m.id, host_str=m.host_str, excerpt=m.excerpt, max_players=m.max_players,
             players_json=m.players_json,
@@ -382,9 +386,9 @@ class TitleWars(gl.Contract):
 
     @gl.public.view
     def get_match(self, match_id: u64) -> Optional[TitleMatch]:
-        if match_id not in self.matches:
+        if str(int(match_id)) not in self.matches:
             return None
-        return self.matches[match_id]
+        return self.matches[str(int(match_id))]
 
     @gl.public.view
     def get_open_matches(self, limit: u32) -> list[u64]:
@@ -404,7 +408,7 @@ class TitleWars(gl.Contract):
             player = Address(player)
         result = []
         for i in range(int(self.next_match_id)):
-            m = self.matches[u64(i)]
+            m = self.matches[str(i)]
             players = _json_to_addrs(m.players_json)
             if self._index_of(players, player) >= 0:
                 result.append(u64(i))

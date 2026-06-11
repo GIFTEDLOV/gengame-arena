@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { PrivyProvider } from "@privy-io/react-auth";
+import { SettlingProvider } from "@/lib/settling";
 
 function ConsoleEasterEgg() {
   useEffect(() => {
@@ -30,34 +31,31 @@ function ConsoleEasterEgg() {
 export default function Providers({ children }: { children: React.ReactNode }) {
   const appId = process.env.NEXT_PUBLIC_PRIVY_APP_ID;
 
-  // Without a real Privy app ID the SDK hard-errors. Skip the provider
-  // so guest mode still works; auth features are simply unavailable.
+  const inner = (
+    <SettlingProvider>
+      <ConsoleEasterEgg />
+      {children}
+    </SettlingProvider>
+  );
+
   if (!appId || appId === "your_privy_app_id_here") {
-    return (
-      <>
-        <ConsoleEasterEgg />
-        {children}
-      </>
-    );
+    return inner;
   }
 
   return (
-    <>
-      <ConsoleEasterEgg />
-      <PrivyProvider
-        appId={appId}
-        config={{
-          loginMethods: ["github", "email", "wallet"],
-          embeddedWallets: {
-            createOnLogin: "users-without-wallets",
-          },
-          appearance: {
-            theme: "dark",
-          },
-        }}
-      >
-        {children}
-      </PrivyProvider>
-    </>
+    <PrivyProvider
+      appId={appId}
+      config={{
+        loginMethods: ["github", "email", "wallet"],
+        embeddedWallets: {
+          createOnLogin: "users-without-wallets",
+        },
+        appearance: {
+          theme: "dark",
+        },
+      }}
+    >
+      {inner}
+    </PrivyProvider>
   );
 }

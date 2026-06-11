@@ -1,5 +1,6 @@
 "use client";
 import { useState, type ReactNode } from "react";
+import { useSettling } from "@/lib/settling";
 
 interface TxButtonProps {
   onClick: () => Promise<void>;
@@ -7,6 +8,9 @@ interface TxButtonProps {
   className?: string;
   children: ReactNode;
   pendingLabel?: string;
+  description?: string;      // shown in the settling indicator tooltip
+  onOptimistic?: () => void; // called immediately when clicked (before tx)
+  onRevert?: () => void;     // called if the tx fails
 }
 
 export default function TxButton({
@@ -15,21 +19,31 @@ export default function TxButton({
   className = "",
   children,
   pendingLabel = "Awaiting validator consensus…",
+  description = "Transaction",
+  onOptimistic,
+  onRevert,
 }: TxButtonProps) {
   const [status, setStatus] = useState<"idle" | "pending" | "done">("idle");
   const [error, setError] = useState("");
+  const { addTx, removeTx } = useSettling();
 
   async function handle() {
     if (status === "pending") return;
+    const txId = `tx-${Date.now()}-${Math.random()}`;
     setStatus("pending");
     setError("");
+    onOptimistic?.();
+    addTx(txId, description);
     try {
       await onClick();
       setStatus("done");
+      removeTx(txId);
       setTimeout(() => setStatus("idle"), 2000);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setStatus("idle");
+      onRevert?.();
+      removeTx(txId);
     }
   }
 

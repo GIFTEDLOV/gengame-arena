@@ -27,7 +27,7 @@ function MatchCard({ match, hostName }: { match: TriviaMatch; hostName?: string 
   const isFull = playerCount >= maxPlayers;
 
   return (
-    <div className="rounded-xl border border-gray-700 p-4 hover:border-indigo-500 transition-colors">
+    <div className="rounded-xl border border-[var(--border)] p-4 hover:border-[var(--border-strong)] transition-colors">
       <p className="font-semibold text-sm mb-1 truncate">{match.topic}</p>
       <div className="flex items-center justify-between text-xs text-gray-400 mb-3">
         <span>
@@ -115,11 +115,11 @@ export default function TriviaRoyalePage() {
       <main className="min-h-screen p-4 sm:p-8">
         <div className="mb-6 flex items-center justify-between">
           <h1 className="text-3xl font-bold">Trivia Royale</h1>
-          <Link href="/dashboard" className="text-indigo-400 hover:underline text-sm">← Arena</Link>
+          <Link href="/dashboard" className="text-[var(--accent-platform-hi)] hover:underline text-sm">← Arena</Link>
         </div>
 
         {/* Create match */}
-        <section className="mb-10 rounded-xl border border-gray-700 p-6">
+        <section className="mb-10 rounded-xl border border-[var(--border)] p-6">
           <h2 className="mb-4 text-lg font-semibold">Create New Match</h2>
 
           {lastCreated?.rejected && (
@@ -128,7 +128,7 @@ export default function TriviaRoyalePage() {
               <p className="text-sm text-gray-300">{lastCreated.reason}</p>
               <button
                 onClick={() => setLastCreated(null)}
-                className="mt-2 text-xs text-indigo-400 hover:underline"
+                className="mt-2 text-xs text-[var(--accent-platform-hi)] hover:underline"
               >
                 Try a different topic
               </button>
@@ -145,7 +145,7 @@ export default function TriviaRoyalePage() {
                 value={topic}
                 onChange={(e) => setTopic(e.target.value.slice(0, MAX_TOPIC_CHARS))}
                 placeholder="Football transfers, Crypto history, 1980s sci-fi movies…"
-                className="w-full rounded-lg border border-gray-600 bg-gray-900 px-4 py-3 text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+                className="w-full rounded-lg border border-[var(--border-strong)] bg-[var(--bg-base)] px-4 py-3 text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
               />
               <p className="mt-1 text-xs text-gray-500">
                 Pick a topic with 15+ publicly verifiable facts. The AI will generate questions and verify answers.
@@ -227,7 +227,7 @@ export default function TriviaRoyalePage() {
                   <Link
                     key={Number(m.id)}
                     href={`/trivia-royale/${Number(m.id)}`}
-                    className="rounded-xl border border-gray-700 p-4 hover:border-indigo-500 transition-colors block"
+                    className="rounded-xl border border-[var(--border)] p-4 hover:border-[var(--border-strong)] transition-colors block"
                   >
                     <p className="font-semibold text-sm mb-1 truncate">{m.topic}</p>
                     <div className="flex items-center justify-between text-xs text-gray-400">

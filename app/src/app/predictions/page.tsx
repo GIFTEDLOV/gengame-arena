@@ -49,10 +49,10 @@ function MarketCard({ market, username }: { market: Market; username?: string })
   const typeBadge = Number(market.market_type) === MARKET_TYPE_BINARY ? "YES/NO" : "Numeric";
 
   return (
-    <div className="rounded-xl border border-gray-700 p-4 hover:border-indigo-500 transition-colors">
+    <div className="rounded-xl border border-[var(--border)] p-4 hover:border-[var(--border-strong)] transition-colors">
       <div className="flex items-start justify-between gap-2 mb-2">
         <p className="text-sm font-medium leading-snug flex-1">{market.question}</p>
-        <span className="shrink-0 text-xs border border-gray-600 rounded px-1.5 py-0.5 text-gray-400">
+        <span className="shrink-0 text-xs border border-[var(--border-strong)] rounded px-1.5 py-0.5 text-gray-400">
           {typeBadge}
         </span>
       </div>
@@ -185,11 +185,11 @@ export default function PredictionsPage() {
       <main className="min-h-screen p-4 sm:p-8">
         <div className="mb-6 flex items-center justify-between">
           <h1 className="text-3xl font-bold">Predictions</h1>
-          <Link href="/dashboard" className="text-indigo-400 hover:underline text-sm">← Arena</Link>
+          <Link href="/dashboard" className="text-[var(--accent-platform-hi)] hover:underline text-sm">← Arena</Link>
         </div>
 
         {/* Create Market */}
-        <section className="mb-10 rounded-xl border border-gray-700 p-6">
+        <section className="mb-10 rounded-xl border border-[var(--border)] p-6">
           <h2 className="mb-4 text-lg font-semibold">Create New Market</h2>
 
           {lastCreatedState?.rejected && (
@@ -198,7 +198,7 @@ export default function PredictionsPage() {
               <p className="text-sm text-gray-300">{lastCreatedState.reason}</p>
               <button
                 onClick={() => setLastCreatedState(null)}
-                className="mt-2 text-xs text-indigo-400 hover:underline"
+                className="mt-2 text-xs text-[var(--accent-platform-hi)] hover:underline"
               >
                 Refine and try again
               </button>
@@ -215,7 +215,7 @@ export default function PredictionsPage() {
                 onChange={(e) => setQuestion(e.target.value.slice(0, MAX_QUESTION_CHARS))}
                 rows={3}
                 placeholder="Will Bitcoin exceed $100,000 USD by the resolution time?"
-                className="w-full rounded-lg border border-gray-600 bg-gray-900 px-4 py-3 text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+                className="w-full rounded-lg border border-[var(--border-strong)] bg-[var(--bg-base)] px-4 py-3 text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
               />
               {marketType === MARKET_TYPE_NUMERIC &&
                 /price|rate|currency|exchange|now|today|current|live|spot|index|value of/i.test(question) && (
@@ -246,13 +246,13 @@ export default function PredictionsPage() {
               <div className="flex gap-3">
                 <button
                   onClick={() => setMarketType(0)}
-                  className={`rounded-lg border px-4 py-2 text-sm font-medium ${marketType === 0 ? "border-indigo-500 bg-indigo-900/30 text-indigo-300" : "border-gray-600 text-gray-400 hover:border-gray-500"}`}
+                  className={`rounded-lg border px-4 py-2 text-sm font-medium ${marketType === 0 ? "border-[var(--accent-platform)] bg-[rgba(139,92,246,0.15)] text-[var(--accent-platform-hi)]" : "border-[var(--border-strong)] text-gray-400 hover:border-gray-500"}`}
                 >
                   Binary (YES / NO)
                 </button>
                 <button
                   onClick={() => setMarketType(1)}
-                  className={`rounded-lg border px-4 py-2 text-sm font-medium ${marketType === 1 ? "border-indigo-500 bg-indigo-900/30 text-indigo-300" : "border-gray-600 text-gray-400 hover:border-gray-500"}`}
+                  className={`rounded-lg border px-4 py-2 text-sm font-medium ${marketType === 1 ? "border-[var(--accent-platform)] bg-[rgba(139,92,246,0.15)] text-[var(--accent-platform-hi)]" : "border-[var(--border-strong)] text-gray-400 hover:border-gray-500"}`}
                 >
                   Numeric (specific value)
                 </button>
@@ -269,7 +269,7 @@ export default function PredictionsPage() {
                 min={minDatetime}
                 max={maxDatetime}
                 onChange={(e) => setResolutionInput(e.target.value)}
-                className="rounded-lg border border-gray-600 bg-gray-900 px-3 py-2 text-white focus:border-indigo-500 focus:outline-none"
+                className="rounded-lg border border-[var(--border-strong)] bg-[var(--bg-base)] px-3 py-2 text-white focus:border-indigo-500 focus:outline-none"
               />
             </div>
 

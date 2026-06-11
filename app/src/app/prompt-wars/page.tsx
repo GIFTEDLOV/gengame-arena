@@ -72,7 +72,7 @@ export default function PromptWarsPage() {
     return (
       <Link
         href={`/prompt-wars/${m.id}`}
-        className="block rounded-xl border border-gray-700 p-4 hover:border-indigo-500 transition-colors"
+        className="block rounded-xl border border-[var(--border)] p-4 hover:border-[var(--border-strong)] transition-colors"
       >
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
@@ -111,12 +111,12 @@ export default function PromptWarsPage() {
             <h1 className="text-3xl font-bold">Prompt Wars</h1>
             <p className="text-gray-400">Write the best prompt to match the AI target.</p>
           </div>
-          <Link href="/dashboard" className="text-indigo-400 hover:underline">← Arena</Link>
+          <Link href="/dashboard" className="text-[var(--accent-platform-hi)] hover:underline">← Arena</Link>
         </div>
 
         <div className="mb-10 grid gap-4 sm:grid-cols-2">
           {/* Create match */}
-          <div className="rounded-xl border border-gray-700 p-6">
+          <div className="rounded-xl border border-[var(--border)] p-6">
             <h2 className="mb-3 text-lg font-semibold">New Match</h2>
             {showModal ? (
               <div className="space-y-3">
@@ -129,7 +129,7 @@ export default function PromptWarsPage() {
                   max={50}
                   value={maxPlayers}
                   onChange={(e) => setMaxPlayers(Number(e.target.value))}
-                  className="w-full rounded-lg border border-gray-600 bg-gray-900 px-3 py-2 text-white focus:border-indigo-500 focus:outline-none"
+                  className="w-full rounded-lg border border-[var(--border-strong)] bg-[var(--bg-base)] px-3 py-2 text-white focus:border-indigo-500 focus:outline-none"
                 />
                 <div className="flex gap-2">
                   <TxButton
@@ -143,7 +143,7 @@ export default function PromptWarsPage() {
                   </TxButton>
                   <button
                     onClick={() => setShowModal(false)}
-                    className="flex-1 rounded-lg border border-gray-600 py-2 text-sm text-gray-400 hover:bg-gray-800"
+                    className="flex-1 rounded-lg border border-[var(--border-strong)] py-2 text-sm text-gray-400 hover:bg-gray-800"
                   >
                     Cancel
                   </button>
@@ -161,14 +161,14 @@ export default function PromptWarsPage() {
           </div>
 
           {/* Join match */}
-          <div className="rounded-xl border border-gray-700 p-6">
+          <div className="rounded-xl border border-[var(--border)] p-6">
             <h2 className="mb-3 text-lg font-semibold">Join Match</h2>
             <form onSubmit={handleJoin} className="flex gap-2">
               <input
                 value={joinId}
                 onChange={(e) => setJoinId(e.target.value)}
                 placeholder="Paste match ID or link"
-                className="flex-1 rounded-lg border border-gray-600 bg-gray-900 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+                className="flex-1 rounded-lg border border-[var(--border-strong)] bg-[var(--bg-base)] px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
               />
               <button
                 type="submit"

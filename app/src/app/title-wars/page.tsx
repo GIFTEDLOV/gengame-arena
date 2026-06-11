@@ -33,7 +33,7 @@ function MatchCard({ match, hostName }: { match: TitleMatch; hostName?: string }
   const isFull = playerCount >= maxPlayers;
 
   return (
-    <div className="rounded-xl border border-gray-700 p-4 hover:border-indigo-500 transition-colors">
+    <div className="rounded-xl border border-[var(--border)] p-4 hover:border-[var(--border-strong)] transition-colors">
       <p className="text-sm mb-3 text-gray-300 italic line-clamp-3 whitespace-pre-line">
         {excerptPreview}
       </p>
@@ -120,11 +120,11 @@ export default function TitleWarsPage() {
       <main className="min-h-screen p-4 sm:p-8">
         <div className="mb-6 flex items-center justify-between">
           <h1 className="text-3xl font-bold">Title Wars</h1>
-          <Link href="/dashboard" className="text-indigo-400 hover:underline text-sm">← Arena</Link>
+          <Link href="/dashboard" className="text-[var(--accent-platform-hi)] hover:underline text-sm">← Arena</Link>
         </div>
 
         {/* Create match */}
-        <section className="mb-10 rounded-xl border border-gray-700 p-6">
+        <section className="mb-10 rounded-xl border border-[var(--border)] p-6">
           <h2 className="mb-4 text-lg font-semibold">Create New Match</h2>
 
           {lastCreated?.rejected && (
@@ -133,7 +133,7 @@ export default function TitleWarsPage() {
               <p className="text-sm text-gray-300">{lastCreated.reason}</p>
               <button
                 onClick={() => setLastCreated(null)}
-                className="mt-2 text-xs text-indigo-400 hover:underline"
+                className="mt-2 text-xs text-[var(--accent-platform-hi)] hover:underline"
               >
                 Try a different excerpt
               </button>
@@ -150,7 +150,7 @@ export default function TitleWarsPage() {
                 onChange={(e) => setExcerpt(e.target.value.slice(0, MAX_EXCERPT_CHARS))}
                 placeholder="Paste a poem, short prose, or scene…"
                 rows={6}
-                className="w-full rounded-lg border border-gray-600 bg-gray-900 px-4 py-3 text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none resize-y"
+                className="w-full rounded-lg border border-[var(--border-strong)] bg-[var(--bg-base)] px-4 py-3 text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none resize-y"
               />
               <p className="mt-1 text-xs text-gray-500">
                 Paste a poem, short prose, or scene. The AI checks the text is suitable, then
@@ -231,7 +231,7 @@ export default function TitleWarsPage() {
                   <Link
                     key={Number(m.id)}
                     href={`/title-wars/${Number(m.id)}`}
-                    className="rounded-xl border border-gray-700 p-4 hover:border-indigo-500 transition-colors block"
+                    className="rounded-xl border border-[var(--border)] p-4 hover:border-[var(--border-strong)] transition-colors block"
                   >
                     <p className="text-sm mb-1 italic text-gray-300 truncate">
                       {m.excerpt.slice(0, 80)}{m.excerpt.length > 80 ? "…" : ""}

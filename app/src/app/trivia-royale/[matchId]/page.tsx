@@ -382,6 +382,7 @@ export default function TriviaMatchPage() {
                 roundAnswers={match.round_answers}
                 currentAddr={currentAddr}
                 accent={accent}
+                autoResolving={autoResolving}
               />
             ) : (
               <p style={{ color: "var(--text-tertiary)" }}>Waiting for question…</p>
@@ -572,6 +573,7 @@ function ActiveQuestion({
   roundAnswers,
   currentAddr,
   accent,
+  autoResolving,
 }: {
   question: TriviaQuestion;
   deadline: number | null;
@@ -585,8 +587,9 @@ function ActiveQuestion({
   roundAnswers: Record<string, string>;
   currentAddr: string | null;
   accent: string;
+  autoResolving: boolean;
 }) {
-  const { display, expired, urgent } = useCountdown(deadline);
+  const { display, expired, urgent, secsLeft } = useCountdown(deadline);
   const [openAnswer, setOpenAnswer] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -609,17 +612,33 @@ function ActiveQuestion({
     onSubmit();
   }
 
-  const timerColor = urgent ? "var(--danger)" : urgent === false && display.includes(":") && parseInt(display.split(":")[0]) === 0 && parseInt(display.split(":")[1]) < 30 ? "var(--warning)" : "var(--game-predictions)";
+  const timerColor = expired
+    ? "var(--text-tertiary)"
+    : urgent
+    ? "var(--danger)"
+    : (secsLeft !== null && secsLeft < 30)
+    ? "var(--warning)"
+    : accent;
 
   return (
     <div>
-      {/* Countdown — large and prominent */}
+      {/* Countdown — 3 states: active, expired-awaiting, resolving */}
       {deadline && (
-        <div
-          className="text-6xl font-mono font-bold text-center mb-6 leading-none"
-          style={{ color: timerColor }}
-        >
-          {display}
+        <div className="text-6xl font-mono font-bold text-center mb-6 leading-none">
+          {autoResolving ? (
+            <span
+              className="text-2xl animate-resolve-pulse"
+              style={{ color: accent }}
+            >
+              Resolving…
+            </span>
+          ) : expired ? (
+            <span className="text-2xl" style={{ color: "var(--text-tertiary)" }}>
+              Awaiting resolution
+            </span>
+          ) : (
+            <span style={{ color: timerColor }}>{display}</span>
+          )}
         </div>
       )}
 

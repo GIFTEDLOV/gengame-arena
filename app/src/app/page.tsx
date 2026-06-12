@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import Footer from "@/components/shell/Footer";
 
@@ -153,29 +152,6 @@ function CtaButton({ label, href, primary }: { label: string; href: string; prim
 
 /* ── Main page ───────────────────────────────────────────── */
 export default function LandingPage() {
-  const router = useRouter();
-  const [ready, setReady] = useState(!hasPrivy);
-  const [authenticated, setAuthenticated] = useState(false);
-
-  useEffect(() => {
-    if (!hasPrivy) {
-      setReady(true);
-      return;
-    }
-    // Dynamically check auth state without requiring Privy context at module level
-    import("@privy-io/react-auth").then(() => setReady(true)).catch(() => setReady(true));
-  }, []);
-
-  function handlePlay() {
-    if (authenticated) {
-      router.push("/dashboard");
-    } else {
-      router.push("/sign-in");
-    }
-  }
-
-  const ctaHref = authenticated ? "/dashboard" : "/sign-in";
-
   return (
     <div style={{ minHeight: "100vh", backgroundColor: "var(--bg-base)", color: "var(--text-primary)" }}>
 

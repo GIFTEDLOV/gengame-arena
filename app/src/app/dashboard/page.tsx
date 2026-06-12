@@ -271,11 +271,22 @@ function GameCard({
 }
 
 /* ── Main dashboard ──────────────────────────────────────── */
-function DashboardContent() {
-  const { ready: privyReady, authenticated, user } = hasPrivy
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    ? (require("@privy-io/react-auth") as { usePrivy: typeof usePrivy }).usePrivy()
-    : { ready: true, authenticated: false, user: null };
+type PrivySnapshot = {
+  privyReady: boolean;
+  authenticated: boolean;
+  user: { github?: { username: string }; email?: { address: string } } | null;
+};
+
+function DashboardContentWithPrivy() {
+  const { ready: privyReady, authenticated, user } = usePrivy() as {
+    ready: boolean;
+    authenticated: boolean;
+    user: PrivySnapshot["user"];
+  };
+  return <DashboardContentBody privyReady={privyReady} authenticated={authenticated} user={user} />;
+}
+
+function DashboardContentBody({ privyReady, authenticated, user }: PrivySnapshot) {
   const { wallet, ready: walletReady } = useActiveWallet();
   const router = useRouter();
   const [guestUsername, setGuestUsername] = useState<string | null>(null);
@@ -419,6 +430,11 @@ function DashboardContent() {
       </div>
     </div>
   );
+}
+
+function DashboardContent() {
+  if (!hasPrivy) return <DashboardContentBody privyReady={true} authenticated={false} user={null} />;
+  return <DashboardContentWithPrivy />;
 }
 
 export default function DashboardPage() {

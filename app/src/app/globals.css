@@ -60,3 +60,103 @@ body {
 .animate-float-up   { animation: float-up  3s var(--ease-out) infinite; }
 .animate-pulse-dot  { animation: pulse-dot 1.5s ease-in-out infinite; }
 .animate-bounce-y   { animation: bounce-y  1.2s ease-in-out infinite; }
+
+/* ── Per-game animations ──────────────────────────────────── */
+
+/* Prompt Wars — gold shimmer wipe on JUDGED reveal */
+@keyframes pw-shimmer {
+  0%   { transform: translateX(-100%); opacity: 0.7; }
+  100% { transform: translateX(200%);  opacity: 0; }
+}
+
+/* Prompt Wars — slow background tile drift */
+@keyframes pw-drift {
+  0%   { transform: translate(0, 0); }
+  50%  { transform: translate(6px, -10px); }
+  100% { transform: translate(0, 0); }
+}
+
+/* Predictions — countdown number tick */
+@keyframes pred-tick {
+  0%, 100% { transform: scale(1); }
+  10%       { transform: scale(1.07); }
+}
+
+/* Trivia — ring pulse out from point */
+@keyframes trivia-ring {
+  0%   { transform: scale(0.6); opacity: 0.6; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+
+/* Trivia — fast ring pulse when time is short */
+@keyframes trivia-ring-fast {
+  0%   { transform: scale(0.6); opacity: 0.9; }
+  100% { transform: scale(2.8); opacity: 0; }
+}
+
+/* Trivia — question text appear */
+@keyframes trivia-question {
+  0%   { opacity: 0; transform: scale(0.96); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+/* Trivia — live match card glow pulse */
+@keyframes trivia-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(236, 72, 153, 0.3); }
+  50%       { box-shadow: 0 0 0 5px rgba(236, 72, 153, 0); }
+}
+
+/* Title Wars — drop cap fade-in */
+@keyframes tw-drop-cap {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Title Wars — staggered title card reveal */
+@keyframes tw-title-reveal {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Title Wars — parchment subtle flicker */
+@keyframes tw-flicker {
+  0%, 97%, 100% { opacity: 1; }
+  98%            { opacity: 0.96; }
+}
+
+/* Prompt Wars shimmer overlay (positioned over content) */
+.pw-shimmer-bar {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 25%, rgba(251,191,36,0.35) 50%, transparent 75%);
+  pointer-events: none;
+  animation: pw-shimmer 800ms var(--ease-out) forwards;
+}
+
+.animate-pw-shimmer       { animation: pw-shimmer 800ms var(--ease-out) forwards; }
+.animate-pw-drift         { animation: pw-drift 30s ease-in-out infinite; }
+.animate-pred-tick        { animation: pred-tick 1s ease-out; }
+.animate-trivia-ring      { animation: trivia-ring 2s ease-out infinite; }
+.animate-trivia-ring-fast { animation: trivia-ring-fast 0.8s ease-out infinite; }
+.animate-trivia-question  { animation: trivia-question var(--duration-normal) var(--ease-out) both; }
+.animate-trivia-glow      { animation: trivia-glow 2s ease-in-out infinite; }
+.animate-tw-drop-cap      { animation: tw-drop-cap var(--duration-slow) var(--ease-out) both; }
+.animate-tw-title-reveal  { animation: tw-title-reveal var(--duration-normal) var(--ease-out) both; }
+.animate-tw-flicker       { animation: tw-flicker 10s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pw-shimmer-bar,
+  .animate-pw-shimmer,
+  .animate-pw-drift,
+  .animate-pred-tick,
+  .animate-trivia-ring,
+  .animate-trivia-ring-fast,
+  .animate-trivia-question,
+  .animate-trivia-glow,
+  .animate-tw-drop-cap,
+  .animate-tw-title-reveal,
+  .animate-tw-flicker {
+    animation: none !important;
+    transition: none !important;
+  }
+}

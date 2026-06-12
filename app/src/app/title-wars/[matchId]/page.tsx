@@ -2,6 +2,7 @@
 
 import AuthGuard from "@/components/AuthGuard";
 import TxButton from "@/components/TxButton";
+import JudgeReasoning from "@/components/shared/JudgeReasoning";
 import Link from "next/link";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
@@ -23,6 +24,8 @@ import {
 import type { TitleMatch } from "@/lib/genlayer";
 import { useActiveWallet } from "@/lib/useActiveWallet";
 
+const accent = "var(--game-title-wars)";
+
 function useCountdown(deadlineUnix: number | null) {
   const [secsLeft, setSecsLeft] = useState<number | null>(null);
 
@@ -35,15 +38,90 @@ function useCountdown(deadlineUnix: number | null) {
     return () => clearInterval(id);
   }, [deadlineUnix]);
 
-  if (secsLeft === null) return { display: "", expired: false, color: "text-white" };
-  if (secsLeft === 0) return { display: "Time's up!", expired: true, color: "text-red-400" };
+  if (secsLeft === null) return { display: "", expired: false, timerColor: "var(--text-primary)" };
+  if (secsLeft === 0) return { display: "Time's up!", expired: true, timerColor: "var(--danger)" };
 
   const mm = String(Math.floor(secsLeft / 60)).padStart(2, "0");
   const ss = String(secsLeft % 60).padStart(2, "0");
-  const color =
-    secsLeft < 30 ? "text-red-400" : secsLeft < 60 ? "text-amber-400" : "text-white";
-  return { display: `${mm}:${ss}`, expired: false, color };
+  const timerColor =
+    secsLeft < 30 ? "var(--danger)" : secsLeft < 60 ? "var(--warning)" : "var(--game-title-wars)";
+  return { display: `${mm}:${ss}`, expired: false, timerColor };
 }
+
+function RuledLineBg() {
+  return (
+    <div
+      className="pointer-events-none absolute inset-0"
+      aria-hidden="true"
+      style={{
+        backgroundImage:
+          "repeating-linear-gradient(180deg, transparent 0px, transparent 27px, rgba(254,243,199,0.05) 27px, rgba(254,243,199,0.05) 28px)",
+      }}
+    />
+  );
+}
+
+function ExcerptCard({ excerpt }: { excerpt: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const isLong = excerpt.length > 300;
+  const display = isLong && !expanded ? excerpt.slice(0, 300) + "…" : excerpt;
+
+  return (
+    <div
+      className="rounded-xl border p-6 mb-6"
+      style={{
+        borderColor: `color-mix(in srgb, ${accent} 20%, var(--border))`,
+        background: `color-mix(in srgb, ${accent} 3%, var(--bg-elevated))`,
+      }}
+    >
+      <p
+        className="text-xs uppercase tracking-widest mb-3 font-mono"
+        style={{ color: accent }}
+      >
+        Literary Excerpt
+      </p>
+      <p
+        className="leading-relaxed whitespace-pre-line"
+        style={{
+          fontFamily: "var(--font-serif)",
+          fontStyle: "italic",
+          color: "var(--text-primary)",
+          fontSize: "1.05rem",
+        }}
+      >
+        {/* Drop cap on first letter */}
+        <span
+          className="float-left mr-2 leading-none animate-tw-drop-cap"
+          style={{
+            fontFamily: "var(--font-serif)",
+            fontStyle: "normal",
+            fontSize: "4rem",
+            lineHeight: "3.2rem",
+            color: accent,
+          }}
+        >
+          {display[0]}
+        </span>
+        {display.slice(1)}
+      </p>
+      {isLong && (
+        <button
+          onClick={() => setExpanded((v) => !v)}
+          className="mt-3 text-xs hover:underline"
+          style={{ color: accent }}
+        >
+          {expanded ? "Collapse" : "Show full excerpt"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+const RANK_STYLES = [
+  { label: "1st 🏆", border: "rgba(251,191,36,0.5)", bg: "rgba(251,191,36,0.07)", color: "#fbbf24" },
+  { label: "2nd",    border: "rgba(192,192,192,0.4)", bg: "rgba(192,192,192,0.04)", color: "#c0c0c0" },
+  { label: "3rd",    border: "rgba(205,127,50,0.4)",  bg: "rgba(205,127,50,0.04)",  color: "#cd7f32" },
+];
 
 export default function TitleMatchPage() {
   const { matchId } = useParams<{ matchId: string }>();
@@ -96,7 +174,7 @@ export default function TitleMatchPage() {
     return (
       <AuthGuard>
         <main className="flex min-h-screen items-center justify-center">
-          <p className="text-gray-400">Loading match…</p>
+          <p style={{ color: "var(--text-tertiary)" }}>Loading match…</p>
         </main>
       </AuthGuard>
     );
@@ -106,8 +184,8 @@ export default function TitleMatchPage() {
     return (
       <AuthGuard>
         <main className="flex min-h-screen flex-col items-center justify-center gap-4">
-          <p className="text-gray-400">Match not found.</p>
-          <Link href="/title-wars" className="text-indigo-400 hover:underline">← Back to lobby</Link>
+          <p style={{ color: "var(--text-tertiary)" }}>Match not found.</p>
+          <Link href="/title-wars" className="hover:underline" style={{ color: accent }}>← Back to lobby</Link>
         </main>
       </AuthGuard>
     );
@@ -119,299 +197,358 @@ export default function TitleMatchPage() {
   const playerCount = match.players.length;
   const maxPlayers = Number(match.max_players);
   const deadline = match.submission_deadline && Number(match.submission_deadline) > 0
-    ? Number(match.submission_deadline)
-    : null;
+    ? Number(match.submission_deadline) : null;
   const submittedCount = match.titles.filter((t) => t !== "").length;
-
   const myIndex = currentAddr
     ? match.players.findIndex((p) => p.toLowerCase() === currentAddr)
     : -1;
   const myTitle = myIndex >= 0 ? match.titles[myIndex] : "";
   const hasSubmitted = myTitle !== "";
 
-  // ── CANCELLED ──────────────────────────────────────────────────────────────
+  // ── CANCELLED ──
   if (state === TITLE_STATE_CANCELLED) {
     return (
       <AuthGuard>
-        <main className="min-h-screen p-8 max-w-2xl mx-auto">
-          <Link href="/title-wars" className="text-indigo-400 hover:underline text-sm">← Back to lobby</Link>
-          <div className="mt-8 rounded-xl border border-red-700 bg-red-900/20 p-6">
-            <h1 className="text-2xl font-bold mb-2">Match Cancelled</h1>
-            <p className="text-gray-300 text-sm">The host cancelled this match.</p>
-            <Link
-              href="/title-wars"
-              className="mt-4 inline-block rounded-lg bg-indigo-600 px-5 py-2 text-sm font-semibold hover:bg-indigo-500"
-            >
-              Back to lobby
-            </Link>
-          </div>
-        </main>
+        <div className="relative min-h-screen overflow-hidden">
+          <RuledLineBg />
+          <main className="relative min-h-screen p-8 max-w-2xl mx-auto">
+            <Link href="/title-wars" className="hover:underline text-sm" style={{ color: accent }}>← Back to lobby</Link>
+            <div className="mt-8 rounded-xl border border-red-700 bg-red-900/20 p-6">
+              <h1 className="text-2xl font-bold mb-2">Match Cancelled</h1>
+              <p className="text-gray-300 text-sm">The host cancelled this match.</p>
+              <Link href="/title-wars" className="mt-4 inline-block rounded-lg px-5 py-2 text-sm font-semibold hover:opacity-90 text-[#0a0a0f]" style={{ background: accent }}>
+                Back to lobby
+              </Link>
+            </div>
+          </main>
+        </div>
       </AuthGuard>
     );
   }
 
-  // ── REJECTED ───────────────────────────────────────────────────────────────
+  // ── REJECTED ──
   if (state === TITLE_STATE_REJECTED) {
     return (
       <AuthGuard>
-        <main className="min-h-screen p-8 max-w-2xl mx-auto">
-          <Link href="/title-wars" className="text-indigo-400 hover:underline text-sm">← Back to lobby</Link>
-          <div className="mt-8 rounded-xl border border-red-700 bg-red-900/20 p-6">
-            <h1 className="text-2xl font-bold mb-2">Excerpt Rejected</h1>
-            <p className="text-gray-300 text-sm">{match.rejection_reason}</p>
-            <Link
-              href="/title-wars"
-              className="mt-4 inline-block rounded-lg bg-indigo-600 px-5 py-2 text-sm font-semibold hover:bg-indigo-500"
-            >
-              Create a new match
-            </Link>
-          </div>
-        </main>
+        <div className="relative min-h-screen overflow-hidden">
+          <RuledLineBg />
+          <main className="relative min-h-screen p-8 max-w-2xl mx-auto">
+            <Link href="/title-wars" className="hover:underline text-sm" style={{ color: accent }}>← Back to lobby</Link>
+            <div className="mt-8 rounded-xl border border-red-700 bg-red-900/20 p-6">
+              <h1 className="text-2xl font-bold mb-2">Excerpt Rejected</h1>
+              <p className="text-gray-300 text-sm">{match.rejection_reason}</p>
+              <Link href="/title-wars" className="mt-4 inline-block rounded-lg px-5 py-2 text-sm font-semibold hover:opacity-90 text-[#0a0a0f]" style={{ background: accent }}>
+                Create a new match
+              </Link>
+            </div>
+          </main>
+        </div>
       </AuthGuard>
     );
   }
 
-  // ── JUDGING ────────────────────────────────────────────────────────────────
+  // ── JUDGING ──
   if (state === TITLE_STATE_JUDGING) {
     return (
       <AuthGuard>
-        <main className="flex min-h-screen flex-col items-center justify-center gap-4 p-8">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-indigo-500" />
-          <h2 className="text-xl font-semibold">AI is ranking all titles…</h2>
-          <p className="text-gray-400 text-sm text-center max-w-sm">
-            Validators are agreeing on the ranking. This may take 30–60 seconds.
-          </p>
-        </main>
+        <div className="relative min-h-screen overflow-hidden">
+          <RuledLineBg />
+          <main className="relative flex min-h-screen flex-col items-center justify-center gap-4 p-8">
+            <div
+              className="h-14 w-14 rounded-full border-t-2 animate-spin"
+              style={{ borderColor: accent }}
+            />
+            <h2
+              className="text-xl font-bold"
+              style={{ fontFamily: "var(--font-serif)", color: accent }}
+            >
+              AI is ranking all titles…
+            </h2>
+            <p className="text-sm text-center max-w-sm" style={{ color: "var(--text-secondary)" }}>
+              Validators are agreeing on the ranking. This may take 30–60 seconds.
+            </p>
+          </main>
+        </div>
       </AuthGuard>
     );
   }
 
-  // ── JUDGED ─────────────────────────────────────────────────────────────────
+  // ── JUDGED ──
   if (state === TITLE_STATE_JUDGED) {
     const winner = match.ranking[0] ?? "";
     const iWon = winner.toLowerCase() === currentAddr;
+    const winnerTitleIdx = match.players.findIndex((p) => p.toLowerCase() === winner.toLowerCase());
+    const winnerTitle = winnerTitleIdx >= 0 ? match.titles[winnerTitleIdx] : "";
+    const fullReasoning = match.judge_reasoning.join("\n\n");
 
     return (
       <AuthGuard>
-        <main className="min-h-screen p-8 max-w-3xl mx-auto">
-          <Link href="/title-wars" className="text-indigo-400 hover:underline text-sm">← Back to lobby</Link>
+        <div className="relative min-h-screen overflow-hidden">
+          <RuledLineBg />
+          <main className="relative min-h-screen p-8 max-w-3xl mx-auto">
+            <Link href="/title-wars" className="hover:underline text-sm" style={{ color: accent }}>← Back to lobby</Link>
 
-          {/* Excerpt */}
-          <div className="mt-6 rounded-xl border border-gray-700 p-6 mb-6">
-            <p className="text-xs text-gray-500 uppercase tracking-wide mb-2 font-mono">Excerpt</p>
-            <p className="text-gray-200 italic whitespace-pre-line leading-relaxed" style={{ fontFamily: "Georgia, serif" }}>
-              {match.excerpt}
-            </p>
-          </div>
+            <ExcerptCard excerpt={match.excerpt} />
 
-          {/* Trophy */}
-          <div className="rounded-xl border border-yellow-500 bg-yellow-900/20 p-6 text-center mb-6">
-            <p className="text-4xl mb-2">🏆</p>
-            <h1 className="text-3xl font-bold mb-1">
-              {iWon ? "You won!" : `Winner: ${displayName(winner)}`}
-            </h1>
-            {iWon && <p className="text-yellow-300 text-sm">🎉 That&apos;s you — congratulations!</p>}
-          </div>
+            {/* Winner banner */}
+            <div
+              className="rounded-xl border p-6 text-center mb-6"
+              style={{
+                borderColor: "rgba(251,191,36,0.5)",
+                background: "rgba(251,191,36,0.06)",
+              }}
+            >
+              <p className="text-4xl mb-2">🏆</p>
+              <h1
+                className="text-3xl font-bold mb-1"
+                style={{ fontFamily: "var(--font-serif)", color: "#fbbf24" }}
+              >
+                {iWon ? "You won!" : `Winner: ${displayName(winner)}`}
+              </h1>
+              {winnerTitle && (
+                <p
+                  className="mt-2 text-xl italic"
+                  style={{ fontFamily: "var(--font-serif)", color: "var(--text-secondary)" }}
+                >
+                  &ldquo;{winnerTitle}&rdquo;
+                </p>
+              )}
+              {iWon && (
+                <p className="text-sm mt-1" style={{ color: "#fbbf24" }}>
+                  🎉 That&apos;s you — congratulations!
+                </p>
+              )}
+            </div>
 
-          {/* Leaderboard */}
-          <div className="rounded-xl border border-gray-700 overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-gray-400 text-left border-b border-gray-700 bg-gray-900">
-                  <th className="px-4 py-3">Rank</th>
-                  <th className="px-4 py-3">Player</th>
-                  <th className="px-4 py-3">Title</th>
-                  <th className="px-4 py-3 hidden md:table-cell">AI Reasoning</th>
-                </tr>
-              </thead>
-              <tbody>
-                {match.ranking.map((addr, i) => {
-                  const isMe = addr.toLowerCase() === currentAddr;
-                  const playerIdx = match.players.findIndex(
-                    (p) => p.toLowerCase() === addr.toLowerCase()
-                  );
-                  const submittedTitle = playerIdx >= 0 ? match.titles[playerIdx] : "";
-                  const rankReason = match.judge_reasoning[i] ?? "";
-                  const rankLabel =
-                    i === 0 ? "1st 🏆" : i === 1 ? "2nd" : i === 2 ? "3rd" : `${i + 1}th`;
+            {/* Gallery-style ranking cards */}
+            <div className="space-y-3 mb-6">
+              {match.ranking.map((addr, i) => {
+                const isMe = addr.toLowerCase() === currentAddr;
+                const playerIdx = match.players.findIndex(
+                  (p) => p.toLowerCase() === addr.toLowerCase()
+                );
+                const submittedTitle = playerIdx >= 0 ? match.titles[playerIdx] : "";
+                const rankReason = match.judge_reasoning[i] ?? "";
+                const rs = RANK_STYLES[i] ?? { label: `${i + 1}th`, border: "var(--border)", bg: "var(--bg-elevated)", color: "var(--text-tertiary)" };
 
-                  return (
-                    <tr
-                      key={addr}
-                      className={`border-b border-gray-800 ${isMe ? "bg-indigo-900/20" : ""}`}
-                    >
-                      <td className={`px-4 py-3 font-semibold ${i === 0 ? "text-yellow-400" : "text-gray-400"}`}>
-                        {rankLabel}
-                      </td>
-                      <td className={`px-4 py-3 ${isMe ? "text-indigo-300" : ""}`}>
+                return (
+                  <div
+                    key={addr}
+                    className="rounded-xl border p-5"
+                    style={{
+                      borderColor: rs.border,
+                      background: isMe
+                        ? `color-mix(in srgb, ${accent} 6%, ${rs.bg})`
+                        : rs.bg,
+                      borderTopWidth: i === 0 ? "3px" : "1px",
+                    }}
+                  >
+                    <div className="flex items-baseline gap-3 mb-2">
+                      <span className="font-bold text-sm" style={{ color: rs.color }}>{rs.label}</span>
+                      <span className="font-semibold" style={{ color: isMe ? accent : "var(--text-primary)" }}>
                         {displayName(addr)}{isMe ? " (you)" : ""}
-                      </td>
-                      <td className="px-4 py-3 text-gray-200 italic">
-                        {submittedTitle || <span className="text-gray-500 not-italic">[did not submit]</span>}
-                      </td>
-                      <td className="px-4 py-3 text-gray-400 text-xs hidden md:table-cell">
+                      </span>
+                    </div>
+                    {submittedTitle ? (
+                      <p
+                        className="text-lg mb-2 animate-tw-title-reveal"
+                        style={{
+                          fontFamily: "var(--font-serif)",
+                          fontStyle: "italic",
+                          color: "var(--text-primary)",
+                          borderLeft: `3px solid ${rs.color}`,
+                          paddingLeft: "0.75rem",
+                        }}
+                      >
+                        &ldquo;{submittedTitle}&rdquo;
+                      </p>
+                    ) : (
+                      <p className="text-sm italic mb-2" style={{ color: "var(--text-tertiary)" }}>[did not submit]</p>
+                    )}
+                    {rankReason && (
+                      <p className="text-xs leading-relaxed" style={{ color: "var(--text-tertiary)", fontFamily: "var(--font-serif)" }}>
                         {rankReason}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
 
-          <Link
-            href="/title-wars"
-            className="mt-6 inline-block rounded-lg bg-indigo-600 px-5 py-2 text-sm font-semibold hover:bg-indigo-500"
-          >
-            Back to lobby
-          </Link>
-        </main>
+            {/* JudgeReasoning — full consensus reasoning */}
+            {fullReasoning && (
+              <JudgeReasoning
+                reasoning={fullReasoning}
+                game="title-wars"
+                verdict={winnerTitle ? `"${winnerTitle}"` : undefined}
+              />
+            )}
+
+            <Link
+              href="/title-wars"
+              className="mt-6 inline-block rounded-lg px-5 py-2 text-sm font-semibold hover:opacity-90 text-[#0a0a0f]"
+              style={{ background: accent }}
+            >
+              Back to lobby
+            </Link>
+          </main>
+        </div>
       </AuthGuard>
     );
   }
 
-  // ── OPEN_FOR_SUBMISSIONS ───────────────────────────────────────────────────
+  // ── OPEN for submissions ──
   if (state === TITLE_STATE_OPEN) {
     return (
       <AuthGuard>
-        <main className="min-h-screen p-8 max-w-2xl mx-auto">
-          <OpenSubmissions
-            match={match}
-            matchIdNum={matchIdNum}
-            wallet={wallet}
-            currentAddr={currentAddr}
-            isPlayer={isPlayer}
-            deadline={deadline}
-            submittedCount={submittedCount}
-            myTitle={myTitle}
-            hasSubmitted={hasSubmitted}
-            submittedThisSession={submittedThisSession}
-            onSubmit={() => setSubmittedThisSession(true)}
-            titleInput={titleInput}
-            setTitleInput={setTitleInput}
-          />
-        </main>
+        <div className="relative min-h-screen overflow-hidden">
+          <RuledLineBg />
+          <main className="relative min-h-screen p-8 max-w-2xl mx-auto">
+            <OpenSubmissions
+              match={match}
+              matchIdNum={matchIdNum}
+              wallet={wallet}
+              currentAddr={currentAddr}
+              isPlayer={isPlayer}
+              deadline={deadline}
+              submittedCount={submittedCount}
+              myTitle={myTitle}
+              hasSubmitted={hasSubmitted}
+              submittedThisSession={submittedThisSession}
+              onSubmit={() => setSubmittedThisSession(true)}
+              titleInput={titleInput}
+              setTitleInput={setTitleInput}
+            />
+          </main>
+        </div>
       </AuthGuard>
     );
   }
 
-  // ── WAITING (lobby) ────────────────────────────────────────────────────────
+  // ── WAITING (lobby) ──
   const shareUrl =
-    typeof window !== "undefined"
-      ? `${window.location.origin}/title-wars/${matchIdNum}`
-      : "";
+    typeof window !== "undefined" ? `${window.location.origin}/title-wars/${matchIdNum}` : "";
 
   return (
     <AuthGuard>
-      <main className="min-h-screen p-8 max-w-2xl mx-auto">
-        <div className="mb-6">
-          <Link href="/title-wars" className="text-indigo-400 hover:underline text-sm">← Lobby</Link>
-        </div>
+      <div className="relative min-h-screen overflow-hidden">
+        <RuledLineBg />
+        <main className="relative min-h-screen p-8 max-w-2xl mx-auto">
+          <div className="mb-6">
+            <Link href="/title-wars" className="hover:underline text-sm" style={{ color: accent }}>← Lobby</Link>
+          </div>
 
-        {/* Excerpt */}
-        <div className="rounded-xl border border-gray-700 p-6 mb-6">
-          <p className="text-xs text-gray-500 uppercase tracking-wide mb-3 font-mono">Literary Excerpt</p>
-          <p
-            className="text-gray-200 italic whitespace-pre-line leading-relaxed text-lg"
-            style={{ fontFamily: "Georgia, serif" }}
+          <ExcerptCard excerpt={match.excerpt} />
+
+          {/* Lobby card */}
+          <div
+            className="rounded-xl border p-6 mb-6"
+            style={{
+              borderColor: `color-mix(in srgb, ${accent} 20%, var(--border))`,
+              background: `color-mix(in srgb, ${accent} 3%, var(--bg-elevated))`,
+            }}
           >
-            {match.excerpt}
-          </p>
-        </div>
+            <p className="text-sm mb-4 font-mono" style={{ color: "var(--text-secondary)" }}>
+              {playerCount} / {maxPlayers} players joined
+            </p>
 
-        {/* Lobby card */}
-        <div className="rounded-xl border border-gray-700 p-6 mb-6">
-          <p className="text-sm text-gray-400 mb-4">
-            {playerCount} / {maxPlayers} players joined
-          </p>
-
-          <div className="mb-4">
-            <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Players</p>
-            <ul className="space-y-1">
-              {match.players.map((addr) => {
-                const isMe = addr.toLowerCase() === currentAddr;
-                const isH = addr.toLowerCase() === match.host_str.toLowerCase();
-                return (
-                  <li key={addr} className="flex items-center gap-2 text-sm">
-                    <span className={isMe ? "text-indigo-300" : "text-gray-300"}>
-                      {displayName(addr)}
-                    </span>
-                    {isH && (
-                      <span className="text-xs text-amber-400 border border-amber-700 rounded px-1">host</span>
-                    )}
-                    {isMe && !isH && <span className="text-xs text-gray-500">(you)</span>}
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-
-          {isHost ? (
-            <div className="space-y-2">
-              <TxButton
-                onClick={async () => { await startTitleWarsMatch(matchIdNum, wallet!); }}
-                disabled={playerCount < 2}
-                className="rounded-lg bg-green-600 px-6 py-2 font-semibold hover:bg-green-500 disabled:opacity-50"
-                pendingLabel="Starting match…"
-                description="Starting Title Wars match"
-              >
-                Start Match
-              </TxButton>
-              {playerCount < 2 && (
-                <p className="text-xs text-gray-500">Need at least 2 players to start</p>
-              )}
-              <div className="pt-2">
-                <TxButton
-                  onClick={async () => { await cancelTitleMatch(matchIdNum, wallet!); }}
-                  className="rounded-lg border border-red-700 px-4 py-1.5 text-sm text-red-400 hover:bg-red-900/20"
-                  pendingLabel="Cancelling…"
-                  description="Cancelling Title Wars match"
-                >
-                  Cancel match
-                </TxButton>
-              </div>
+            <div className="mb-4">
+              <p className="text-xs uppercase tracking-widest mb-2 font-mono" style={{ color: "var(--text-tertiary)" }}>Players</p>
+              <ul className="space-y-1.5">
+                {match.players.map((addr) => {
+                  const isMe = addr.toLowerCase() === currentAddr;
+                  const isH = addr.toLowerCase() === match.host_str.toLowerCase();
+                  return (
+                    <li key={addr} className="flex items-center gap-2 text-sm">
+                      <span style={{ color: isMe ? accent : "var(--text-primary)" }}>
+                        {displayName(addr)}
+                      </span>
+                      {isH && (
+                        <span
+                          className="text-xs border rounded px-1"
+                          style={{ color: accent, borderColor: `color-mix(in srgb, ${accent} 30%, transparent)` }}
+                        >
+                          host
+                        </span>
+                      )}
+                      {isMe && !isH && <span className="text-xs" style={{ color: "var(--text-tertiary)" }}>(you)</span>}
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
-          ) : isPlayer ? (
-            <p className="text-gray-400 text-sm">Waiting for host to start the match…</p>
-          ) : playerCount < maxPlayers ? (
-            <TxButton
-              onClick={async () => { await joinTitleWarsMatch(matchIdNum, wallet!); }}
-              className="rounded-lg bg-indigo-600 px-6 py-2 font-semibold hover:bg-indigo-500"
-              pendingLabel="Joining…"
-              description="Joining Title Wars match"
-            >
-              Join Match
-            </TxButton>
-          ) : (
-            <p className="text-gray-400 text-sm">Match is full.</p>
-          )}
-        </div>
 
-        {/* Share link */}
-        <div className="rounded-xl border border-gray-700 p-4">
-          <p className="text-xs text-gray-500 mb-2">Share this match</p>
-          <div className="flex items-center gap-2">
-            <code className="flex-1 text-xs bg-gray-900 rounded px-3 py-2 text-gray-300 truncate">
-              {shareUrl}
-            </code>
-            <button
-              onClick={() => {
-                navigator.clipboard.writeText(shareUrl);
-                setCopied(true);
-                setTimeout(() => setCopied(false), 2000);
-              }}
-              className="text-xs text-indigo-400 hover:underline shrink-0"
-            >
-              {copied ? "Copied!" : "Copy"}
-            </button>
+            {isHost ? (
+              <div className="space-y-2">
+                <TxButton
+                  onClick={async () => { await startTitleWarsMatch(matchIdNum, wallet!); }}
+                  disabled={playerCount < 2}
+                  className="rounded-lg px-6 py-2 font-semibold hover:opacity-90 disabled:opacity-50 text-[#0a0a0f] bg-[var(--game-title-wars)]"
+                  pendingLabel="Starting match…"
+                  description="Starting Title Wars match"
+                >
+                  Start Match
+                </TxButton>
+                {playerCount < 2 && (
+                  <p className="text-xs" style={{ color: "var(--text-tertiary)" }}>Need at least 2 players to start</p>
+                )}
+                <div className="pt-2">
+                  <TxButton
+                    onClick={async () => { await cancelTitleMatch(matchIdNum, wallet!); }}
+                    className="rounded-lg border border-red-700 px-4 py-1.5 text-sm text-red-400 hover:bg-red-900/20"
+                    pendingLabel="Cancelling…"
+                    description="Cancelling Title Wars match"
+                  >
+                    Cancel match
+                  </TxButton>
+                </div>
+              </div>
+            ) : isPlayer ? (
+              <p className="text-sm" style={{ color: "var(--text-secondary)" }}>Waiting for host to start the match…</p>
+            ) : playerCount < maxPlayers ? (
+              <TxButton
+                onClick={async () => { await joinTitleWarsMatch(matchIdNum, wallet!); }}
+                className="rounded-lg px-6 py-2 font-semibold hover:opacity-90 text-[#0a0a0f] bg-[var(--game-title-wars)]"
+                pendingLabel="Joining…"
+                description="Joining Title Wars match"
+              >
+                Join Match
+              </TxButton>
+            ) : (
+              <p className="text-sm" style={{ color: "var(--text-secondary)" }}>Match is full.</p>
+            )}
           </div>
-        </div>
-      </main>
+
+          {/* Share link */}
+          <div className="rounded-xl border border-[var(--border)] p-4">
+            <p className="text-xs mb-2 font-mono" style={{ color: "var(--text-tertiary)" }}>Share this match</p>
+            <div className="flex items-center gap-2">
+              <code
+                className="flex-1 text-xs rounded px-3 py-2 truncate font-mono"
+                style={{ background: "var(--bg-elevated)", color: "var(--text-secondary)" }}
+              >
+                {shareUrl}
+              </code>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(shareUrl);
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 2000);
+                }}
+                className="text-xs hover:underline shrink-0"
+                style={{ color: accent }}
+              >
+                {copied ? "Copied!" : "Copy"}
+              </button>
+            </div>
+          </div>
+        </main>
+      </div>
     </AuthGuard>
   );
 }
 
-// ── OpenSubmissions sub-component ─────────────────────────────────────────────
+// ── OpenSubmissions sub-component ──
 
 function OpenSubmissions({
   match,
@@ -443,14 +580,8 @@ function OpenSubmissions({
   setTitleInput: (v: string) => void;
 }) {
   const MAX_TITLE = 100;
-  const { display, expired, color } = useCountdown(deadline);
+  const { display, expired, timerColor } = useCountdown(deadline);
   const playerCount = match.players.length;
-
-  const [excerptExpanded, setExcerptExpanded] = useState(false);
-  const isLong = match.excerpt.length > 300;
-  const excerptDisplay = isLong && !excerptExpanded
-    ? match.excerpt.slice(0, 300) + "…"
-    : match.excerpt;
 
   async function handleSubmit() {
     if (!wallet || !titleInput.trim()) throw new Error("No wallet or empty title");
@@ -463,49 +594,40 @@ function OpenSubmissions({
 
   return (
     <div>
-      {/* Excerpt */}
-      <div className="rounded-xl border border-gray-700 p-5 mb-6">
-        <p className="text-xs text-gray-500 uppercase tracking-wide mb-2 font-mono">Excerpt</p>
-        <p
-          className="text-gray-200 italic whitespace-pre-line leading-relaxed"
-          style={{ fontFamily: "Georgia, serif" }}
-        >
-          {excerptDisplay}
-        </p>
-        {isLong && (
-          <button
-            onClick={() => setExcerptExpanded((v) => !v)}
-            className="mt-2 text-xs text-indigo-400 hover:underline"
-          >
-            {excerptExpanded ? "Collapse" : "Show full excerpt"}
-          </button>
-        )}
-      </div>
+      <ExcerptCard excerpt={match.excerpt} />
 
       {/* Countdown */}
       {deadline && (
-        <div className={`text-5xl font-mono font-bold text-center mb-6 ${color}`}>
+        <div
+          className="text-5xl font-mono font-bold text-center mb-6 leading-none"
+          style={{ color: timerColor }}
+        >
           {display}
         </div>
       )}
 
-      {/* Submission count */}
-      <p className="text-xs text-gray-500 text-center mb-4">
-        {submittedCount} / {playerCount} players have submitted
+      <p className="text-xs text-center mb-4 font-mono" style={{ color: "var(--text-tertiary)" }}>
+        {submittedCount} / {playerCount} players submitted
       </p>
 
       {/* Title input */}
       {isPlayer && !expired ? (
         hasSubmitted || submittedThisSession ? (
-          <div className="rounded-lg border border-green-700 bg-green-900/20 p-4 text-sm mb-4">
-            <p className="text-green-400 font-semibold">
-              ✓ Title locked in (you can update until the deadline)
+          <div
+            className="rounded-lg border p-4 text-sm mb-4"
+            style={{ borderColor: "rgba(52,211,153,0.4)", background: "rgba(52,211,153,0.06)" }}
+          >
+            <p className="text-green-400 font-semibold">✓ Title locked in</p>
+            <p
+              className="mt-1 text-lg italic"
+              style={{ fontFamily: "var(--font-serif)", color: "var(--text-secondary)" }}
+            >
+              &ldquo;{myTitle}&rdquo;
             </p>
-            <p className="text-gray-400 mt-1 italic">&ldquo;{myTitle}&rdquo;</p>
           </div>
         ) : (
           <div className="mb-6">
-            <label className="block text-sm text-gray-400 mb-1">
+            <label className="block text-sm mb-1" style={{ color: "var(--text-secondary)" }}>
               Your title ({titleInput.length}/{MAX_TITLE})
             </label>
             <div className="flex gap-2">
@@ -514,13 +636,14 @@ function OpenSubmissions({
                 value={titleInput}
                 onChange={(e) => setTitleInput(e.target.value.slice(0, MAX_TITLE))}
                 placeholder="Enter your best title…"
-                className="flex-1 rounded-lg border border-gray-600 bg-gray-900 px-4 py-3 text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+                className="flex-1 rounded-lg border border-[var(--border-strong)] bg-[var(--bg-base)] px-4 py-3 placeholder-gray-500 focus:outline-none"
+                style={{ fontFamily: "var(--font-serif)", fontStyle: "italic", color: "var(--text-primary)" }}
                 onKeyDown={(e) => { if (e.key === "Enter" && titleInput.trim()) handleSubmit(); }}
               />
               <TxButton
                 onClick={handleSubmit}
                 disabled={!titleInput.trim()}
-                className="rounded-lg bg-indigo-600 px-5 py-3 font-semibold hover:bg-indigo-500 disabled:opacity-50"
+                className="rounded-lg px-5 py-3 font-semibold hover:opacity-90 disabled:opacity-50 text-[#0a0a0f] bg-[var(--game-title-wars)]"
                 pendingLabel="Submitting…"
                 description="Submitting title"
               >
@@ -540,7 +663,7 @@ function OpenSubmissions({
         <div className="mt-4">
           <TxButton
             onClick={async () => { await judgeTitleMatch(matchIdNum, wallet!); }}
-            className="rounded-lg bg-amber-600 px-5 py-2 text-sm font-semibold hover:bg-amber-500"
+            className="rounded-lg px-5 py-2 text-sm font-semibold hover:opacity-90 text-[#0a0a0f] bg-[var(--game-title-wars)]"
             pendingLabel="AI ranking titles… (may take 1-2 min)"
             description="Judging Title Wars match"
           >
@@ -549,13 +672,13 @@ function OpenSubmissions({
         </div>
       )}
 
-      {/* DEV skip */}
       {process.env.NODE_ENV === "development" && !deadlinePassed && (
-        <div className="mt-8 rounded-lg border border-dashed border-gray-600 p-3 text-xs text-gray-500">
+        <div className="mt-8 rounded-lg border border-dashed border-[var(--border)] p-3 text-xs" style={{ color: "var(--text-tertiary)" }}>
           <p className="mb-2 font-mono">DEV: force-judge</p>
           <TxButton
             onClick={async () => { await judgeTitleMatch(matchIdNum, wallet!); }}
-            className="rounded bg-gray-700 px-3 py-1 text-xs hover:bg-gray-600"
+            className="rounded px-3 py-1 text-xs hover:opacity-80"
+            style={{ background: "var(--bg-elevated)" } as React.CSSProperties}
             pendingLabel="Force judging…"
           >
             Skip deadline → Judge

@@ -35,14 +35,12 @@ function useCountdown(deadlineUnix: number | null) {
     return () => clearInterval(id);
   }, [deadlineUnix]);
 
-  if (secsLeft === null) return { display: "", expired: false, color: "text-white" };
-  if (secsLeft === 0) return { display: "Time's up!", expired: true, color: "text-red-400" };
+  if (secsLeft === null) return { display: "", expired: false, urgent: false, secsLeft: null };
+  if (secsLeft === 0) return { display: "Time's up!", expired: true, urgent: true, secsLeft: 0 };
 
   const mm = String(Math.floor(secsLeft / 60)).padStart(2, "0");
   const ss = String(secsLeft % 60).padStart(2, "0");
-  const color =
-    secsLeft < 10 ? "text-red-400" : secsLeft < 30 ? "text-amber-400" : "text-white";
-  return { display: `${mm}:${ss}`, expired: false, color };
+  return { display: `${mm}:${ss}`, expired: false, urgent: secsLeft < 15, secsLeft };
 }
 
 function optionLetter(opt: string): string {
@@ -52,6 +50,25 @@ function optionLetter(opt: string): string {
 
 function optionText(opt: string): string {
   return opt.replace(/^[A-D][)\.]\s*/i, "").trim();
+}
+
+function RingsBg({ fast }: { fast?: boolean }) {
+  return (
+    <div className="pointer-events-none absolute inset-0 overflow-hidden flex items-center justify-center" aria-hidden="true">
+      {[1, 2, 3].map((i) => (
+        <div
+          key={i}
+          className={`absolute rounded-full ${fast ? "animate-trivia-ring-fast" : "animate-trivia-ring"}`}
+          style={{
+            width: `${i * 30}vw`,
+            height: `${i * 30}vw`,
+            border: "1px solid rgba(236,72,153,0.12)",
+            animationDelay: `${(i - 1) * 0.65}s`,
+          }}
+        />
+      ))}
+    </div>
+  );
 }
 
 export default function TriviaMatchPage() {
@@ -64,7 +81,6 @@ export default function TriviaMatchPage() {
   const [loading, setLoading] = useState(true);
   const [playerNames, setPlayerNames] = useState<Record<string, string>>({});
   const [copied, setCopied] = useState(false);
-  const [openAnswer, setOpenAnswer] = useState("");
   const [submittedThisRound, setSubmittedThisRound] = useState(false);
   const lastRoundRef = useRef<number>(-1);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -73,11 +89,9 @@ export default function TriviaMatchPage() {
     const m = await getTriviaMatch(matchIdNum);
     if (m) {
       setMatch((prev) => {
-        // Reset submission tracking when round advances
         const newRound = Number(m.current_round);
         if (prev && Number(prev.current_round) !== newRound) {
           setSubmittedThisRound(false);
-          setOpenAnswer("");
         }
         return m;
       });
@@ -86,45 +100,34 @@ export default function TriviaMatchPage() {
     return m;
   }, [matchIdNum]);
 
-  useEffect(() => {
-    fetchMatch();
-  }, [fetchMatch]);
+  useEffect(() => { fetchMatch(); }, [fetchMatch]);
 
-  // Adaptive polling: 2s during active play, 5s in lobby
   useEffect(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);
     const state = match ? Number(match.state) : -1;
     const ms =
       state === TRIVIA_STATE_IN_PROGRESS || state === TRIVIA_STATE_RESOLVING || state === TRIVIA_STATE_GENERATING
-        ? 2000
-        : 5000;
+        ? 2000 : 5000;
     intervalRef.current = setInterval(fetchMatch, ms);
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [fetchMatch, match?.state]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Track round changes to reset submission state
   useEffect(() => {
     if (!match) return;
     const round = Number(match.current_round);
     if (round !== lastRoundRef.current) {
       lastRoundRef.current = round;
       setSubmittedThisRound(false);
-      setOpenAnswer("");
     }
   }, [match?.current_round]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Resolve player usernames
   useEffect(() => {
     if (!match) return;
     [...match.players].forEach((addr) => {
       const key = addr.toLowerCase();
       if (!playerNames[key]) {
         getUserProfile(addr).then((p) => {
-          if (p?.username) {
-            setPlayerNames((prev) => ({ ...prev, [key]: String(p.username) }));
-          }
+          if (p?.username) setPlayerNames((prev) => ({ ...prev, [key]: String(p.username) }));
         });
       }
     });
@@ -138,7 +141,7 @@ export default function TriviaMatchPage() {
     return (
       <AuthGuard>
         <main className="flex min-h-screen items-center justify-center">
-          <p className="text-gray-400">Loading match…</p>
+          <p style={{ color: "var(--text-tertiary)" }}>Loading match…</p>
         </main>
       </AuthGuard>
     );
@@ -148,8 +151,8 @@ export default function TriviaMatchPage() {
     return (
       <AuthGuard>
         <main className="flex min-h-screen flex-col items-center justify-center gap-4">
-          <p className="text-gray-400">Match not found.</p>
-          <Link href="/trivia-royale" className="text-indigo-400 hover:underline">← Back to lobby</Link>
+          <p style={{ color: "var(--text-tertiary)" }}>Match not found.</p>
+          <Link href="/trivia-royale" className="hover:underline" style={{ color: "var(--game-trivia)" }}>← Back to lobby</Link>
         </main>
       </AuthGuard>
     );
@@ -168,26 +171,21 @@ export default function TriviaMatchPage() {
       ? match.questions[currentRound]
       : null;
   const deadline = match.answer_deadline && Number(match.answer_deadline) > 0
-    ? Number(match.answer_deadline)
-    : null;
+    ? Number(match.answer_deadline) : null;
   const answeredCount = Object.keys(match.round_answers).length;
   const survivorCount = playerCount - match.eliminated.length;
+  const accent = "var(--game-trivia)";
 
-  // ── CANCELLED ──────────────────────────────────────────────────────────────
+  // ── CANCELLED ──
   if (state === TRIVIA_STATE_CANCELLED) {
     return (
       <AuthGuard>
         <main className="min-h-screen p-8 max-w-2xl mx-auto">
-          <Link href="/trivia-royale" className="text-indigo-400 hover:underline text-sm">← Back to lobby</Link>
+          <Link href="/trivia-royale" className="hover:underline text-sm" style={{ color: accent }}>← Back to lobby</Link>
           <div className="mt-8 rounded-xl border border-red-700 bg-red-900/20 p-6">
             <h1 className="text-2xl font-bold mb-2">Match Cancelled</h1>
-            {match.rejection_reason && (
-              <p className="text-gray-300 text-sm">{match.rejection_reason}</p>
-            )}
-            <Link
-              href="/trivia-royale"
-              className="mt-4 inline-block rounded-lg bg-indigo-600 px-5 py-2 text-sm font-semibold hover:bg-indigo-500"
-            >
+            {match.rejection_reason && <p className="text-gray-300 text-sm">{match.rejection_reason}</p>}
+            <Link href="/trivia-royale" className="mt-4 inline-block rounded-lg px-5 py-2 text-sm font-semibold hover:opacity-90 text-white" style={{ background: accent }}>
               Create a new match
             </Link>
           </div>
@@ -196,7 +194,7 @@ export default function TriviaMatchPage() {
     );
   }
 
-  // ── ENDED ──────────────────────────────────────────────────────────────────
+  // ── ENDED ──
   if (state === TRIVIA_STATE_ENDED) {
     const winner = match.winner_str;
     const iWon = winner.toLowerCase() === currentAddr;
@@ -204,283 +202,339 @@ export default function TriviaMatchPage() {
 
     return (
       <AuthGuard>
-        <main className="min-h-screen p-8 max-w-2xl mx-auto">
-          <Link href="/trivia-royale" className="text-indigo-400 hover:underline text-sm">← Back to lobby</Link>
+        <div className="relative min-h-screen overflow-hidden">
+          <RingsBg />
+          <main className="relative min-h-screen p-8 max-w-2xl mx-auto">
+            <Link href="/trivia-royale" className="hover:underline text-sm" style={{ color: accent }}>← Back to lobby</Link>
 
-          <div className="mt-6 rounded-xl border border-yellow-500 bg-yellow-900/20 p-6 text-center">
-            <p className="text-4xl mb-2">🏆</p>
-            <h1 className="text-3xl font-bold mb-1">
-              {iWon ? "You won!" : `Winner: ${displayName(winner)}`}
-            </h1>
-            {iWon && (
-              <p className="text-yellow-300 text-sm">That's you — congratulations!</p>
-            )}
-            <p className="text-gray-400 mt-2 text-sm">Topic: {match.topic}</p>
-          </div>
+            <div
+              className="mt-6 rounded-xl border p-6 text-center"
+              style={{
+                borderColor: "rgba(236,72,153,0.4)",
+                background: "rgba(236,72,153,0.06)",
+              }}
+            >
+              <p className="text-5xl mb-3">🏆</p>
+              <h1
+                className="text-3xl font-bold mb-1"
+                style={{ color: iWon ? accent : "var(--text-primary)" }}
+              >
+                {iWon ? "You survived!" : `Survivor: ${displayName(winner)}`}
+              </h1>
+              {iWon && <p className="text-sm" style={{ color: accent }}>Last player standing — congratulations!</p>}
+              <p className="text-gray-400 mt-2 text-sm">Topic: {match.topic}</p>
+            </div>
 
-          <div className="mt-6 rounded-xl border border-gray-700 p-4">
-            <h2 className="text-lg font-semibold mb-3">Elimination Order</h2>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-gray-400 text-left border-b border-gray-700">
-                  <th className="pb-2">Rank</th>
-                  <th className="pb-2">Player</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr className="border-b border-gray-800">
-                  <td className="py-2 text-yellow-400 font-semibold">1st 🏆</td>
-                  <td className="py-2">{displayName(winner)}{iWon ? " (you)" : ""}</td>
-                </tr>
-                {elimOrder.map((addr, i) => {
-                  const rank = i + 2;
-                  const isMe = addr.toLowerCase() === currentAddr;
-                  return (
-                    <tr key={addr} className="border-b border-gray-800">
-                      <td className="py-2 text-gray-400">{rank}{rank === 2 ? "nd" : rank === 3 ? "rd" : "th"}</td>
-                      <td className={`py-2 ${isMe ? "text-indigo-300" : ""}`}>
-                        {displayName(addr)}{isMe ? " (you)" : ""}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+            <div className="mt-6 rounded-xl border border-[var(--border)] p-4">
+              <h2 className="text-lg font-semibold mb-3">Elimination Order</h2>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-[var(--border)]" style={{ color: "var(--text-tertiary)" }}>
+                    <th className="pb-2 text-left text-xs uppercase tracking-widest">Rank</th>
+                    <th className="pb-2 text-left text-xs uppercase tracking-widest">Player</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="border-b border-[var(--border)]">
+                    <td className="py-2 font-semibold" style={{ color: accent }}>1st 🏆</td>
+                    <td className="py-2">{displayName(winner)}{iWon ? " (you)" : ""}</td>
+                  </tr>
+                  {elimOrder.map((addr, i) => {
+                    const rank = i + 2;
+                    const isMe = addr.toLowerCase() === currentAddr;
+                    const suffix = rank === 2 ? "nd" : rank === 3 ? "rd" : "th";
+                    return (
+                      <tr key={addr} className="border-b border-[var(--border)]">
+                        <td className="py-2 text-gray-400">{rank}{suffix}</td>
+                        <td className="py-2" style={{ color: isMe ? accent : "var(--text-primary)" }}>
+                          {displayName(addr)}{isMe ? " (you)" : ""}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
 
-          <Link
-            href="/trivia-royale"
-            className="mt-6 inline-block rounded-lg bg-indigo-600 px-5 py-2 text-sm font-semibold hover:bg-indigo-500"
-          >
-            Back to lobby
-          </Link>
-        </main>
+            <Link
+              href="/trivia-royale"
+              className="mt-6 inline-block rounded-lg px-5 py-2 text-sm font-semibold hover:opacity-90 text-white"
+              style={{ background: accent }}
+            >
+              Back to lobby
+            </Link>
+          </main>
+        </div>
       </AuthGuard>
     );
   }
 
-  // ── GENERATING ─────────────────────────────────────────────────────────────
+  // ── GENERATING ──
   if (state === TRIVIA_STATE_GENERATING) {
     const isMidGame = match.questions.length > 0;
-    const activeSurvivors = survivorCount;
     return (
       <AuthGuard>
-        <main className="flex min-h-screen flex-col items-center justify-center gap-4 p-8">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-indigo-500" />
-          <h2 className="text-xl font-semibold">
-            {isMidGame
-              ? `Generating more questions… (${activeSurvivors} player${activeSurvivors !== 1 ? "s" : ""} still standing)`
-              : "Generating trivia questions…"}
-          </h2>
-          <p className="text-gray-400 text-sm text-center max-w-sm">
-            {isMidGame
-              ? `The question pool is exhausted. Generating a fresh batch for "${match.topic}".`
-              : `Validators are agreeing on the question pool for "${match.topic}". This may take 30–60 seconds.`}
-          </p>
-        </main>
+        <div className="relative min-h-screen overflow-hidden">
+          <RingsBg />
+          <main className="relative flex min-h-screen flex-col items-center justify-center gap-4 p-8">
+            <div
+              className="h-14 w-14 rounded-full border-t-2 animate-spin"
+              style={{ borderColor: accent }}
+            />
+            <h2 className="text-xl font-bold" style={{ color: accent }}>
+              {isMidGame ? "Generating more questions…" : "Generating trivia questions…"}
+            </h2>
+            <p className="text-sm text-center max-w-sm" style={{ color: "var(--text-secondary)" }}>
+              {isMidGame
+                ? `Fresh batch for "${match.topic}" — ${survivorCount} player${survivorCount !== 1 ? "s" : ""} still in.`
+                : `Validators are agreeing on the question pool for "${match.topic}". This may take 30–60 seconds.`}
+            </p>
+          </main>
+        </div>
       </AuthGuard>
     );
   }
 
-  // ── RESOLVING ──────────────────────────────────────────────────────────────
+  // ── RESOLVING ──
   if (state === TRIVIA_STATE_RESOLVING) {
     return (
       <AuthGuard>
-        <main className="flex min-h-screen flex-col items-center justify-center gap-4 p-8">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-amber-500" />
-          <h2 className="text-xl font-semibold">Resolving round {currentRound + 1}…</h2>
-          <p className="text-gray-400 text-sm">Validators checking open-ended answers</p>
-        </main>
+        <div className="relative min-h-screen overflow-hidden">
+          <RingsBg />
+          <main className="relative flex min-h-screen flex-col items-center justify-center gap-4 p-8">
+            <div className="h-14 w-14 rounded-full border-t-2 animate-spin" style={{ borderColor: "var(--warning)" }} />
+            <h2 className="text-xl font-bold">Resolving round {currentRound + 1}…</h2>
+            <p className="text-sm" style={{ color: "var(--text-secondary)" }}>Validators checking open-ended answers</p>
+          </main>
+        </div>
       </AuthGuard>
     );
   }
 
-  // ── IN PROGRESS ────────────────────────────────────────────────────────────
+  // ── IN PROGRESS ──
   if (state === TRIVIA_STATE_IN_PROGRESS) {
+    const isUrgent = !!(deadline && (deadline - Math.floor(Date.now() / 1000)) < 15);
     return (
       <AuthGuard>
-        <main className="min-h-screen p-8 max-w-2xl mx-auto">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <span className="text-xs text-gray-400 uppercase tracking-wide">
-                Round {currentRound + 1} / {match.questions.length}
-              </span>
-              <p className="text-sm text-gray-400 mt-0.5">Topic: {match.topic}</p>
+        <div className="relative min-h-screen overflow-hidden">
+          <RingsBg fast={isUrgent} />
+          <main className="relative min-h-screen p-4 sm:p-6 max-w-2xl mx-auto">
+            {/* Top bar */}
+            <div className="flex items-center justify-between mb-4 py-2">
+              <div>
+                <span className="text-xs font-mono" style={{ color: "var(--text-tertiary)" }}>
+                  Round {currentRound + 1} / {match.questions.length}
+                </span>
+                <p className="text-xs mt-0.5" style={{ color: "var(--text-tertiary)" }}>{match.topic}</p>
+              </div>
+              {/* Lives dots */}
+              <div className="flex gap-1 flex-wrap justify-end max-w-xs items-center">
+                {match.players.map((addr) => {
+                  const isMe = addr.toLowerCase() === currentAddr;
+                  const alive = !match.eliminated.some((e) => e.toLowerCase() === addr.toLowerCase());
+                  return (
+                    <div
+                      key={addr}
+                      className={`rounded-full ${isMe ? "ring-2 ring-offset-1 ring-[var(--game-trivia)]" : ""}`}
+                      style={{
+                        width: 10,
+                        height: 10,
+                        background: alive ? accent : "var(--text-disabled)",
+                        outlineOffset: isMe ? "1px" : undefined,
+                      } as React.CSSProperties}
+                      title={displayName(addr)}
+                    />
+                  );
+                })}
+                <span className="text-xs ml-1 font-mono" style={{ color: "var(--text-tertiary)" }}>
+                  {survivorCount} alive
+                </span>
+              </div>
             </div>
-            <div className="text-right">
-              <span className="text-xs text-gray-400">
-                {survivorCount} player{survivorCount !== 1 ? "s" : ""} remaining
-              </span>
-            </div>
-          </div>
 
-          {isEliminated && (
-            <div className="mb-4 rounded-lg border border-gray-600 bg-gray-800/50 p-3 text-sm text-gray-400">
-              You were eliminated — watching as a spectator.
-            </div>
-          )}
-
-          {question ? (
-            <ActiveQuestion
-              question={question}
-              deadline={deadline}
-              matchId={matchIdNum}
-              wallet={wallet}
-              isSurvivor={isSurvivor}
-              submittedThisRound={submittedThisRound}
-              onSubmit={() => setSubmittedThisRound(true)}
-              answeredCount={answeredCount}
-              survivorCount={survivorCount}
-              roundAnswers={match.round_answers}
-              currentAddr={currentAddr}
-            />
-          ) : (
-            <p className="text-gray-400">Waiting for question…</p>
-          )}
-
-          {/* Anyone can trigger resolve (deadline-based) */}
-          {(deadline && Date.now() / 1000 > deadline) && (
-            <div className="mt-6">
-              <TxButton
-                onClick={async () => { await resolveTriviaRound(matchIdNum, wallet!); }}
-                className="rounded-lg bg-amber-600 px-5 py-2 text-sm font-semibold hover:bg-amber-500"
-                pendingLabel="Resolving round…"
-                description="Resolving Trivia round"
+            {isEliminated && (
+              <div
+                className="mb-4 rounded-lg border p-3 text-sm"
+                style={{ borderColor: "var(--border)", color: "var(--text-tertiary)" }}
               >
-                Resolve Round
-              </TxButton>
-            </div>
-          )}
+                You were eliminated — watching as a spectator.
+              </div>
+            )}
 
-          {answeredCount >= survivorCount && survivorCount > 0 && (
-            <div className="mt-4">
-              <TxButton
-                onClick={async () => { await resolveTriviaRound(matchIdNum, wallet!); }}
-                className="rounded-lg bg-green-700 px-5 py-2 text-sm font-semibold hover:bg-green-600"
-                pendingLabel="Resolving round…"
-                description="Resolving Trivia round"
-              >
-                All answered — Resolve Round
-              </TxButton>
-            </div>
-          )}
-        </main>
+            {question ? (
+              <ActiveQuestion
+                question={question}
+                deadline={deadline}
+                matchId={matchIdNum}
+                wallet={wallet}
+                isSurvivor={isSurvivor}
+                submittedThisRound={submittedThisRound}
+                onSubmit={() => setSubmittedThisRound(true)}
+                answeredCount={answeredCount}
+                survivorCount={survivorCount}
+                roundAnswers={match.round_answers}
+                currentAddr={currentAddr}
+                accent={accent}
+              />
+            ) : (
+              <p style={{ color: "var(--text-tertiary)" }}>Waiting for question…</p>
+            )}
+
+            {deadline && Date.now() / 1000 > deadline && (
+              <div className="mt-6">
+                <TxButton
+                  onClick={async () => { await resolveTriviaRound(matchIdNum, wallet!); }}
+                  className="rounded-lg px-5 py-2 text-sm font-semibold hover:opacity-90"
+                  style={{ background: "var(--warning)", color: "#0a0a0f" } as React.CSSProperties}
+                  pendingLabel="Resolving round…"
+                  description="Resolving Trivia round"
+                >
+                  Resolve Round
+                </TxButton>
+              </div>
+            )}
+
+            {answeredCount >= survivorCount && survivorCount > 0 && !(deadline && Date.now() / 1000 > deadline) && (
+              <div className="mt-4">
+                <TxButton
+                  onClick={async () => { await resolveTriviaRound(matchIdNum, wallet!); }}
+                  className="rounded-lg px-5 py-2 text-sm font-semibold hover:opacity-90 text-white"
+                  style={{ background: "var(--success)" } as React.CSSProperties}
+                  pendingLabel="Resolving round…"
+                  description="Resolving Trivia round"
+                >
+                  All answered — Resolve Round
+                </TxButton>
+              </div>
+            )}
+          </main>
+        </div>
       </AuthGuard>
     );
   }
 
-  // ── WAITING (lobby) ────────────────────────────────────────────────────────
+  // ── WAITING (lobby) ──
   const shareUrl =
-    typeof window !== "undefined"
-      ? `${window.location.origin}/trivia-royale/${matchIdNum}`
-      : "";
+    typeof window !== "undefined" ? `${window.location.origin}/trivia-royale/${matchIdNum}` : "";
 
   return (
     <AuthGuard>
-      <main className="min-h-screen p-8 max-w-2xl mx-auto">
-        <div className="mb-6 flex items-center justify-between">
-          <Link href="/trivia-royale" className="text-indigo-400 hover:underline text-sm">← Lobby</Link>
-        </div>
+      <div className="relative min-h-screen overflow-hidden">
+        <RingsBg />
+        <main className="relative min-h-screen p-8 max-w-2xl mx-auto">
+          <div className="mb-6">
+            <Link href="/trivia-royale" className="hover:underline text-sm" style={{ color: accent }}>← Lobby</Link>
+          </div>
 
-        <div className="rounded-xl border border-gray-700 p-6 mb-6">
-          <h1 className="text-2xl font-bold mb-1">{match.topic}</h1>
-          <p className="text-sm text-gray-400 mb-4">
-            {playerCount} / {maxPlayers} players joined
-          </p>
+          <div
+            className="rounded-xl border p-6 mb-6"
+            style={{ borderColor: "rgba(236,72,153,0.25)", background: "rgba(236,72,153,0.04)" }}
+          >
+            <h1 className="text-2xl font-bold mb-1" style={{ color: accent }}>
+              {match.topic}
+            </h1>
+            <p className="text-sm mb-4 font-mono" style={{ color: "var(--text-secondary)" }}>
+              {playerCount} / {maxPlayers} players joined
+            </p>
 
-          {/* Players list */}
-          <div className="mb-4">
-            <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Players</p>
-            <ul className="space-y-1">
-              {match.players.map((addr) => {
-                const isMe = addr.toLowerCase() === currentAddr;
-                const isH = addr.toLowerCase() === match.host_str.toLowerCase();
-                return (
-                  <li key={addr} className="flex items-center gap-2 text-sm">
-                    <span className={isMe ? "text-indigo-300" : "text-gray-300"}>
-                      {displayName(addr)}
-                    </span>
-                    {isH && (
-                      <span className="text-xs text-amber-400 border border-amber-700 rounded px-1">
-                        host
+            <div className="mb-4">
+              <p className="text-xs uppercase tracking-widest mb-2 font-mono" style={{ color: "var(--text-tertiary)" }}>
+                Players
+              </p>
+              <ul className="space-y-1.5">
+                {match.players.map((addr) => {
+                  const isMe = addr.toLowerCase() === currentAddr;
+                  const isH = addr.toLowerCase() === match.host_str.toLowerCase();
+                  return (
+                    <li key={addr} className="flex items-center gap-2 text-sm">
+                      <span style={{ color: isMe ? accent : "var(--text-primary)" }}>
+                        {displayName(addr)}
                       </span>
-                    )}
-                    {isMe && !isH && (
-                      <span className="text-xs text-gray-500">(you)</span>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-
-          {/* Actions */}
-          {isHost ? (
-            <div className="space-y-2">
-              <TxButton
-                onClick={async () => { await startTriviaMatch(matchIdNum, wallet!); }}
-                disabled={playerCount < 2}
-                className="rounded-lg bg-green-600 px-6 py-2 font-semibold hover:bg-green-500 disabled:opacity-50"
-                pendingLabel="Starting match (AI generating questions…)"
-                description="Starting Trivia Royale match"
-              >
-                Start Match
-              </TxButton>
-              {playerCount < 2 && (
-                <p className="text-xs text-gray-500">Need at least 2 players to start</p>
-              )}
-              <div className="pt-2">
-                <TxButton
-                  onClick={async () => { await cancelTriviaMatch(matchIdNum, wallet!); }}
-                  className="rounded-lg border border-red-700 px-4 py-1.5 text-sm text-red-400 hover:bg-red-900/20"
-                  pendingLabel="Cancelling…"
-                  description="Cancelling Trivia match"
-                >
-                  Cancel match
-                </TxButton>
-              </div>
+                      {isH && (
+                        <span
+                          className="text-xs border rounded px-1"
+                          style={{ color: accent, borderColor: `color-mix(in srgb, ${accent} 30%, transparent)` }}
+                        >
+                          host
+                        </span>
+                      )}
+                      {isMe && !isH && <span className="text-xs" style={{ color: "var(--text-tertiary)" }}>(you)</span>}
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
-          ) : isPlayer ? (
-            <p className="text-gray-400 text-sm">Waiting for host to start the match…</p>
-          ) : playerCount < maxPlayers ? (
-            <TxButton
-              onClick={async () => { await joinTriviaMatch(matchIdNum, wallet!); }}
-              className="rounded-lg bg-indigo-600 px-6 py-2 font-semibold hover:bg-indigo-500"
-              pendingLabel="Joining…"
-              description="Joining Trivia Royale match"
-            >
-              Join Match
-            </TxButton>
-          ) : (
-            <p className="text-gray-400 text-sm">Match is full.</p>
-          )}
-        </div>
 
-        {/* Share link */}
-        <div className="rounded-xl border border-gray-700 p-4">
-          <p className="text-xs text-gray-500 mb-2">Share this match</p>
-          <div className="flex items-center gap-2">
-            <code className="flex-1 text-xs bg-gray-900 rounded px-3 py-2 text-gray-300 truncate">
-              {shareUrl}
-            </code>
-            <button
-              onClick={() => {
-                navigator.clipboard.writeText(shareUrl);
-                setCopied(true);
-                setTimeout(() => setCopied(false), 2000);
-              }}
-              className="text-xs text-indigo-400 hover:underline shrink-0"
-            >
-              {copied ? "Copied!" : "Copy"}
-            </button>
+            {isHost ? (
+              <div className="space-y-2">
+                <TxButton
+                  onClick={async () => { await startTriviaMatch(matchIdNum, wallet!); }}
+                  disabled={playerCount < 2}
+                  className="rounded-lg px-6 py-2 font-semibold hover:opacity-90 disabled:opacity-50 text-white bg-[var(--game-trivia)]"
+                  pendingLabel="Starting match (AI generating questions…)"
+                  description="Starting Trivia Royale match"
+                >
+                  Start Match
+                </TxButton>
+                {playerCount < 2 && (
+                  <p className="text-xs" style={{ color: "var(--text-tertiary)" }}>Need at least 2 players to start</p>
+                )}
+                <div className="pt-2">
+                  <TxButton
+                    onClick={async () => { await cancelTriviaMatch(matchIdNum, wallet!); }}
+                    className="rounded-lg border border-red-700 px-4 py-1.5 text-sm text-red-400 hover:bg-red-900/20"
+                    pendingLabel="Cancelling…"
+                    description="Cancelling Trivia match"
+                  >
+                    Cancel match
+                  </TxButton>
+                </div>
+              </div>
+            ) : isPlayer ? (
+              <p className="text-sm" style={{ color: "var(--text-secondary)" }}>Waiting for host to start the match…</p>
+            ) : playerCount < maxPlayers ? (
+              <TxButton
+                onClick={async () => { await joinTriviaMatch(matchIdNum, wallet!); }}
+                className="rounded-lg px-6 py-2 font-semibold hover:opacity-90 text-white bg-[var(--game-trivia)]"
+                pendingLabel="Joining…"
+                description="Joining Trivia Royale match"
+              >
+                Join Match
+              </TxButton>
+            ) : (
+              <p className="text-sm" style={{ color: "var(--text-secondary)" }}>Match is full.</p>
+            )}
           </div>
-        </div>
-      </main>
+
+          <div className="rounded-xl border border-[var(--border)] p-4">
+            <p className="text-xs mb-2 font-mono" style={{ color: "var(--text-tertiary)" }}>Share this match</p>
+            <div className="flex items-center gap-2">
+              <code
+                className="flex-1 text-xs rounded px-3 py-2 truncate font-mono"
+                style={{ background: "var(--bg-elevated)", color: "var(--text-secondary)" }}
+              >
+                {shareUrl}
+              </code>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(shareUrl);
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 2000);
+                }}
+                className="text-xs hover:underline shrink-0"
+                style={{ color: accent }}
+              >
+                {copied ? "Copied!" : "Copy"}
+              </button>
+            </div>
+          </div>
+        </main>
+      </div>
     </AuthGuard>
   );
 }
 
-// ── ActiveQuestion sub-component ───────────────────────────────────────────
+// ── ActiveQuestion sub-component ──
 
 function ActiveQuestion({
   question,
@@ -494,6 +548,7 @@ function ActiveQuestion({
   survivorCount,
   roundAnswers,
   currentAddr,
+  accent,
 }: {
   question: TriviaQuestion;
   deadline: number | null;
@@ -506,15 +561,14 @@ function ActiveQuestion({
   survivorCount: number;
   roundAnswers: Record<string, string>;
   currentAddr: string | null;
+  accent: string;
 }) {
-  const { display, expired, color } = useCountdown(deadline);
+  const { display, expired, urgent } = useCountdown(deadline);
   const [openAnswer, setOpenAnswer] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (question.type === "open" && inputRef.current) {
-      inputRef.current.focus();
-    }
+    if (question.type === "open" && inputRef.current) inputRef.current.focus();
   }, [question]);
 
   const myAnswer = currentAddr ? roundAnswers[currentAddr.toLowerCase()] : undefined;
@@ -532,29 +586,51 @@ function ActiveQuestion({
     onSubmit();
   }
 
+  const timerColor = urgent ? "var(--danger)" : urgent === false && display.includes(":") && parseInt(display.split(":")[0]) === 0 && parseInt(display.split(":")[1]) < 30 ? "var(--warning)" : "var(--game-predictions)";
+
   return (
     <div>
-      {/* Countdown */}
+      {/* Countdown — large and prominent */}
       {deadline && (
-        <div className={`text-5xl font-mono font-bold text-center mb-6 ${color}`}>
+        <div
+          className="text-6xl font-mono font-bold text-center mb-6 leading-none"
+          style={{ color: timerColor }}
+        >
           {display}
         </div>
       )}
 
-      {/* Question */}
-      <div className="rounded-xl border border-gray-600 p-6 mb-6">
-        <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">
+      {/* Question card */}
+      <div
+        className="rounded-xl border p-6 mb-6 animate-trivia-question"
+        style={{
+          borderColor: `color-mix(in srgb, ${accent} 25%, var(--border))`,
+          background: `color-mix(in srgb, ${accent} 4%, var(--bg-elevated))`,
+        }}
+      >
+        <p
+          className="text-xs uppercase tracking-widest mb-3 font-mono"
+          style={{ color: accent }}
+        >
           {question.type === "mc" ? "Multiple Choice" : "Open Ended"}
         </p>
-        <p className="text-xl font-semibold leading-snug">{question.text}</p>
+        <p
+          className="text-2xl font-bold leading-snug"
+          style={{ color: "var(--text-primary)" }}
+        >
+          {question.text}
+        </p>
       </div>
 
       {/* Answer area */}
       {isSurvivor && !expired ? (
         hasMyAnswer || submittedThisRound ? (
-          <div className="rounded-lg border border-green-700 bg-green-900/20 p-4 text-sm">
-            <p className="text-green-400 font-semibold">Answer locked in</p>
-            <p className="text-gray-400 mt-1">
+          <div
+            className="rounded-lg border p-4 text-sm"
+            style={{ borderColor: "rgba(52,211,153,0.4)", background: "rgba(52,211,153,0.06)" }}
+          >
+            <p className="text-green-400 font-semibold">✓ Answer locked in</p>
+            <p className="mt-1 font-mono text-xs" style={{ color: "var(--text-secondary)" }}>
               Waiting for others… ({answeredCount} / {survivorCount} answered)
             </p>
           </div>
@@ -567,12 +643,12 @@ function ActiveQuestion({
                 <TxButton
                   key={letter}
                   onClick={() => submitMC(letter)}
-                  className="rounded-xl border border-gray-600 p-4 text-left hover:border-indigo-500 hover:bg-indigo-900/20 transition-colors"
+                  className="rounded-xl border p-4 text-left transition-all hover:border-[var(--game-trivia)] hover:bg-[rgba(236,72,153,0.08)] w-full"
                   pendingLabel="Locking in…"
                   description="Submitting trivia answer"
                 >
-                  <span className="font-bold text-indigo-400 mr-2">{letter})</span>
-                  {text}
+                  <span className="font-bold mr-2 text-sm" style={{ color: accent }}>{letter})</span>
+                  <span className="text-sm">{text}</span>
                 </TxButton>
               );
             })}
@@ -585,17 +661,13 @@ function ActiveQuestion({
               value={openAnswer}
               onChange={(e) => setOpenAnswer(e.target.value)}
               placeholder="Type your answer…"
-              className="flex-1 rounded-lg border border-gray-600 bg-gray-900 px-4 py-3 text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && openAnswer.trim()) {
-                  submitOpen();
-                }
-              }}
+              className="flex-1 rounded-lg border border-[var(--border-strong)] bg-[var(--bg-base)] px-4 py-3 text-white placeholder-gray-500 focus:outline-none"
+              onKeyDown={(e) => { if (e.key === "Enter" && openAnswer.trim()) submitOpen(); }}
             />
             <TxButton
               onClick={submitOpen}
               disabled={!openAnswer.trim()}
-              className="rounded-lg bg-indigo-600 px-5 py-3 font-semibold hover:bg-indigo-500 disabled:opacity-50"
+              className="rounded-lg px-5 py-3 font-semibold hover:opacity-90 disabled:opacity-50 text-white bg-[var(--game-trivia)]"
               pendingLabel="Submitting…"
               description="Submitting trivia answer"
             >
@@ -608,7 +680,10 @@ function ActiveQuestion({
           Time&apos;s up! Waiting for round resolution…
         </div>
       ) : (
-        <div className="rounded-lg border border-gray-700 p-4 text-sm text-gray-400">
+        <div
+          className="rounded-lg border p-4 text-sm font-mono"
+          style={{ borderColor: "var(--border)", color: "var(--text-tertiary)" }}
+        >
           {answeredCount} / {survivorCount} players answered
         </div>
       )}

@@ -336,8 +336,7 @@ export default function MarketPage() {
                       fetchMarket();
                     }}
                     disabled={isBinary ? binaryPick === null : numericInput.trim() === ""}
-                    className="rounded-lg px-6 py-2 font-semibold hover:opacity-90 disabled:opacity-50 text-[#0a0a0f]"
-                    style={{ background: accent } as React.CSSProperties}
+                    className="rounded-lg px-6 py-2 font-semibold hover:opacity-90 disabled:opacity-50 text-[#0a0a0f] bg-[var(--game-predictions)]"
                     description="Submitting prediction"
                   >
                     {isPlayer ? "Update prediction" : "Submit prediction"}
@@ -360,8 +359,7 @@ export default function MarketPage() {
                       await resolveMarket(marketIdNum, wallet);
                       fetchMarket();
                     }}
-                    className="rounded-lg px-6 py-2 font-semibold hover:opacity-90 text-[#0a0a0f]"
-                    style={{ background: accent } as React.CSSProperties}
+                    className="rounded-lg px-6 py-2 font-semibold hover:opacity-90 text-[#0a0a0f] bg-[var(--game-predictions)]"
                     pendingLabel="Fetching real-world data via validators…"
                     description="Resolving prediction market"
                   >
@@ -377,8 +375,7 @@ export default function MarketPage() {
                     await cancelMarketPredictions(marketIdNum, wallet);
                     fetchMarket();
                   }}
-                  className="rounded-lg border border-[var(--border-strong)] px-4 py-1.5 text-sm hover:border-red-700 hover:text-red-400 disabled:opacity-40"
-                  style={{ color: "var(--text-secondary)" } as React.CSSProperties}
+                  className="rounded-lg border border-[var(--border-strong)] px-4 py-1.5 text-sm hover:border-red-700 hover:text-red-400 disabled:opacity-40 text-[var(--text-secondary)]"
                   description="Cancelling market"
                 >
                   Cancel market

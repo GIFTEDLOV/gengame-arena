@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { usePrivy } from "@privy-io/react-auth";
 import SettlingIndicator from "./SettlingIndicator";
 
 const NAV_LINKS = [
@@ -18,8 +19,7 @@ const hasPrivy = !!privyAppId && privyAppId !== "your_privy_app_id_here";
 
 /* ── inner header that can call usePrivy() safely ── */
 function HeaderInner() {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { usePrivy } = require("@privy-io/react-auth");
+  // ALL hooks unconditionally at the top — never inside conditionals or after early returns
   const { authenticated, user, logout } = usePrivy() as {
     authenticated: boolean;
     user: { github?: { username: string }; email?: { address: string } } | null;

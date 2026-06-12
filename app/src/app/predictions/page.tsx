@@ -29,7 +29,7 @@ const MAX_QUESTION_CHARS = 300;
 function defaultResolutionDatetime(): string {
   const d = new Date(Date.now() + 48 * 3600 * 1000);
   d.setMinutes(0, 0, 0);
-  return d.toISOString().slice(0, 16); // "2025-01-15T12:00"
+  return d.toISOString().slice(0, 16);
 }
 
 function formatCountdown(resolutionTs: number): string {
@@ -42,24 +42,84 @@ function formatCountdown(resolutionTs: number): string {
   return `${h}h ${m}m`;
 }
 
+function PredBg() {
+  return (
+    <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+      <div
+        className="absolute inset-0"
+        style={{
+          backgroundImage:
+            "repeating-linear-gradient(90deg, rgba(45,212,191,0.035) 0px, rgba(45,212,191,0.035) 1px, transparent 1px, transparent 20%)",
+        }}
+      />
+      <svg
+        className="absolute top-0 left-0 w-full opacity-60"
+        height="64"
+        viewBox="0 0 800 64"
+        preserveAspectRatio="none"
+      >
+        <polyline
+          points="0,52 80,38 160,44 240,28 320,40 400,22 480,34 560,18 640,30 720,14 800,26"
+          fill="none"
+          stroke="rgba(45,212,191,0.15)"
+          strokeWidth="1.5"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </div>
+  );
+}
+
+function SectionHeader({ title, count, accent }: { title: string; count: number; accent: string }) {
+  return (
+    <div className="mb-4 flex items-center gap-2">
+      <h2 className="text-lg font-semibold">{title}</h2>
+      <span
+        className="rounded-full px-2 py-0.5 text-xs font-mono"
+        style={{ background: `color-mix(in srgb, ${accent} 15%, transparent)`, color: accent }}
+      >
+        {count}
+      </span>
+    </div>
+  );
+}
+
 function MarketCard({ market, username }: { market: Market; username?: string }) {
   const state = Number(market.state);
   const resTs = Number(market.resolution_datetime);
   const isPastDeadline = Date.now() / 1000 > resTs;
-  const typeBadge = Number(market.market_type) === MARKET_TYPE_BINARY ? "YES/NO" : "Numeric";
+  const isBinary = Number(market.market_type) === MARKET_TYPE_BINARY;
+  const accent = "var(--game-predictions)";
+
+  const resDate = new Date(resTs * 1000).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 
   return (
-    <div className="rounded-xl border border-[var(--border)] p-4 hover:border-[var(--border-strong)] transition-colors">
+    <div
+      className="rounded-xl border p-4 hover:border-[var(--border-strong)] transition-all hover:-translate-y-0.5"
+      style={{ borderColor: state === PRED_STATE_RESOLVED ? "rgba(45,212,191,0.15)" : "var(--border)" }}
+    >
       <div className="flex items-start justify-between gap-2 mb-2">
         <p className="text-sm font-medium leading-snug flex-1">{market.question}</p>
-        <span className="shrink-0 text-xs border border-[var(--border-strong)] rounded px-1.5 py-0.5 text-gray-400">
-          {typeBadge}
+        <span
+          className="shrink-0 text-xs rounded px-1.5 py-0.5 border"
+          style={{
+            borderColor: `color-mix(in srgb, ${accent} 30%, transparent)`,
+            color: accent,
+            fontFamily: "var(--font-mono)",
+          }}
+        >
+          {isBinary ? "⚡ YES/NO" : "# Numeric"}
         </span>
       </div>
-      <div className="flex items-center justify-between text-xs text-gray-500">
-        <span>
+
+      <div className="flex items-center justify-between mb-3" style={{ fontFamily: "var(--font-mono)" }}>
+        <span className="text-xs" style={{ color: "var(--text-tertiary)" }}>
           {state === PRED_STATE_OPEN && !isPastDeadline && (
-            <>Resolves in {formatCountdown(resTs)}</>
+            <span style={{ color: accent }}>→ {formatCountdown(resTs)}</span>
           )}
           {state === PRED_STATE_OPEN && isPastDeadline && (
             <span className="text-amber-400">Awaiting resolution</span>
@@ -68,16 +128,21 @@ function MarketCard({ market, username }: { market: Market; username?: string })
             <span className="text-green-400">Resolved</span>
           )}
         </span>
-        <span>{market.players.length} player{market.players.length !== 1 ? "s" : ""}</span>
+        <span className="text-xs" style={{ color: "var(--text-tertiary)" }}>
+          {resDate} · {market.players.length}p
+        </span>
       </div>
+
       {state === PRED_STATE_RESOLVED && market.ranking.length > 0 && (
-        <p className="mt-1 text-xs text-gray-400">
+        <p className="mb-2 text-xs" style={{ color: "var(--text-secondary)" }}>
           Winner: {username ?? market.ranking[0].slice(0, 10) + "…"}
         </p>
       )}
+
       <Link
         href={`/predictions/${Number(market.id)}`}
-        className="mt-3 block text-center rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold hover:bg-indigo-500"
+        className="block text-center rounded-lg px-3 py-1.5 text-xs font-semibold hover:opacity-90 transition-opacity text-[#0a0a0f]"
+        style={{ background: accent }}
       >
         {state === PRED_STATE_OPEN && !isPastDeadline ? "Join & predict" :
          state === PRED_STATE_OPEN && isPastDeadline ? "Resolve now" :
@@ -123,14 +188,11 @@ export default function PredictionsPage() {
     setResolvingMarkets(resolving);
     setResolvedMarkets(resolved);
 
-    // resolve winner usernames
     for (const m of resolved) {
       const winner = m.ranking[0];
       if (winner && !winnerNames[winner.toLowerCase()]) {
         getUserProfile(winner).then((p) => {
-          if (p?.username) {
-            setWinnerNames((prev) => ({ ...prev, [winner.toLowerCase()]: String(p.username) }));
-          }
+          if (p?.username) setWinnerNames((prev) => ({ ...prev, [winner.toLowerCase()]: String(p.username) }));
         });
       }
     }
@@ -158,14 +220,10 @@ export default function PredictionsPage() {
     if (resolutionTs > nowTs + MAX_RESOLUTION_HOURS * 3600) {
       throw new Error("Resolution must be at most 7 days from now");
     }
-
     const fn = marketType === MARKET_TYPE_BINARY ? createBinaryMarket : createNumericMarket;
     const { marketId } = await fn(question, resolutionTs, wallet);
-
-    // Check if the market was accepted or rejected
     const m = await getMarket(marketId);
     if (m && Number(m.state) === 2) {
-      // REJECTED
       setLastCreatedState({ rejected: true, reason: m.rejection_reason, marketId });
     } else {
       setLastCreatedState({ rejected: false, reason: "", marketId });
@@ -174,177 +232,166 @@ export default function PredictionsPage() {
     }
   }
 
-  const minDatetime = new Date(Date.now() + MIN_RESOLUTION_HOURS * 3600 * 1000 + 60000)
-    .toISOString().slice(0, 16);
-  const maxDatetime = new Date(Date.now() + MAX_RESOLUTION_HOURS * 3600 * 1000)
-    .toISOString().slice(0, 16);
+  const minDatetime = new Date(Date.now() + MIN_RESOLUTION_HOURS * 3600 * 1000 + 60000).toISOString().slice(0, 16);
+  const maxDatetime = new Date(Date.now() + MAX_RESOLUTION_HOURS * 3600 * 1000).toISOString().slice(0, 16);
+  const accent = "var(--game-predictions)";
 
   return (
     <AuthGuard>
       <AppShell>
-      <main className="min-h-screen p-4 sm:p-8">
-        <div className="mb-6 flex items-center justify-between">
-          <h1 className="text-3xl font-bold">Predictions</h1>
-          <Link href="/dashboard" className="text-[var(--accent-platform-hi)] hover:underline text-sm">← Arena</Link>
-        </div>
-
-        {/* Create Market */}
-        <section className="mb-10 rounded-xl border border-[var(--border)] p-6">
-          <h2 className="mb-4 text-lg font-semibold">Create New Market</h2>
-
-          {lastCreatedState?.rejected && (
-            <div className="mb-4 rounded-lg border border-red-700 bg-red-900/20 p-4">
-              <p className="text-red-400 font-semibold mb-1">Market rejected by AI verifier</p>
-              <p className="text-sm text-gray-300">{lastCreatedState.reason}</p>
-              <button
-                onClick={() => setLastCreatedState(null)}
-                className="mt-2 text-xs text-[var(--accent-platform-hi)] hover:underline"
-              >
-                Refine and try again
-              </button>
+        <div className="relative min-h-screen overflow-hidden">
+          <PredBg />
+          <main className="relative p-4 sm:p-8">
+            <div className="mb-6 flex items-center justify-between">
+              <div>
+                <h1 className="text-3xl font-bold">Predictions</h1>
+                <p className="mt-0.5 text-sm" style={{ color: accent, fontFamily: "var(--font-mono)" }}>
+                  Real-world outcomes · AI-resolved
+                </p>
+              </div>
+              <Link href="/dashboard" className="text-[var(--accent-platform-hi)] hover:underline text-sm">← Arena</Link>
             </div>
-          )}
 
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm text-gray-400 mb-1">
-                Question ({question.length}/{MAX_QUESTION_CHARS})
-              </label>
-              <textarea
-                value={question}
-                onChange={(e) => setQuestion(e.target.value.slice(0, MAX_QUESTION_CHARS))}
-                rows={3}
-                placeholder="Will Bitcoin exceed $100,000 USD by the resolution time?"
-                className="w-full rounded-lg border border-[var(--border-strong)] bg-[var(--bg-base)] px-4 py-3 text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
-              />
-              {marketType === MARKET_TYPE_NUMERIC &&
-                /price|rate|currency|exchange|now|today|current|live|spot|index|value of/i.test(question) && (
-                <div className="mt-2 rounded-lg border border-amber-600 bg-amber-900/20 p-3 text-sm">
-                  <p className="font-semibold text-amber-400 mb-1">⚠️ Heads up — live data warning</p>
-                  <p className="text-gray-300 mb-2">
-                    Frequently-changing values (like spot prices or current rates) may fail to resolve on
-                    local Studio because each simulated validator must independently fetch live data and
-                    reach consensus. Network hiccups can cause a{" "}
-                    <code className="text-amber-300">MAJORITY_DISAGREE</code> failure.
-                  </p>
-                  <p className="text-gray-400 font-medium mb-1">More reliable numeric questions reference stable values:</p>
-                  <ul className="list-disc list-inside text-gray-400 space-y-0.5">
-                    <li>Totals or supply caps (e.g. "What is the maximum supply of Bitcoin")</li>
-                    <li>Historical facts (e.g. "What was the closing S&amp;P 500 on January 2, 2025")</li>
-                    <li>Fixed protocol parameters</li>
-                  </ul>
-                  <p className="mt-2 text-gray-500 text-xs">
-                    This limitation does not apply on GenLayer mainnet, where many distributed validators
-                    reach consensus reliably.
-                  </p>
+            <section className="mb-10 rounded-xl border p-6" style={{ borderColor: "color-mix(in srgb, var(--game-predictions) 20%, var(--border))" }}>
+              <h2 className="mb-4 text-lg font-semibold">Create New Market</h2>
+
+              {lastCreatedState?.rejected && (
+                <div className="mb-4 rounded-lg border border-red-700 bg-red-900/20 p-4">
+                  <p className="text-red-400 font-semibold mb-1">Market rejected by AI verifier</p>
+                  <p className="text-sm text-gray-300">{lastCreatedState.reason}</p>
+                  <button
+                    onClick={() => setLastCreatedState(null)}
+                    className="mt-2 text-xs hover:underline"
+                    style={{ color: accent }}
+                  >
+                    Refine and try again
+                  </button>
                 </div>
               )}
-            </div>
 
-            <div>
-              <p className="text-sm text-gray-400 mb-2">Market type</p>
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setMarketType(0)}
-                  className={`rounded-lg border px-4 py-2 text-sm font-medium ${marketType === 0 ? "border-[var(--accent-platform)] bg-[rgba(139,92,246,0.15)] text-[var(--accent-platform-hi)]" : "border-[var(--border-strong)] text-gray-400 hover:border-gray-500"}`}
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">
+                    Question ({question.length}/{MAX_QUESTION_CHARS})
+                  </label>
+                  <textarea
+                    value={question}
+                    onChange={(e) => setQuestion(e.target.value.slice(0, MAX_QUESTION_CHARS))}
+                    rows={3}
+                    placeholder="Will Bitcoin exceed $100,000 USD by the resolution time?"
+                    className="w-full rounded-lg border border-[var(--border-strong)] bg-[var(--bg-base)] px-4 py-3 text-white placeholder-gray-500 focus:outline-none"
+                  />
+                  {marketType === MARKET_TYPE_NUMERIC &&
+                    /price|rate|currency|exchange|now|today|current|live|spot|index|value of/i.test(question) && (
+                    <div className="mt-2 rounded-lg border border-amber-600 bg-amber-900/20 p-3 text-sm">
+                      <p className="font-semibold text-amber-400 mb-1">⚠️ Heads up — live data warning</p>
+                      <p className="text-gray-300 mb-2">
+                        Frequently-changing values may cause{" "}
+                        <code className="text-amber-300 font-mono">MAJORITY_DISAGREE</code> on local Studio.
+                        Stable historical values work more reliably.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <p className="text-sm text-gray-400 mb-2">Market type</p>
+                  <div className="flex gap-3">
+                    {([0, 1] as const).map((t) => (
+                      <button
+                        key={t}
+                        onClick={() => setMarketType(t)}
+                        className={`rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${marketType === t ? "border-[var(--game-predictions)]" : "border-[var(--border-strong)] text-gray-400 hover:border-gray-500"}`}
+                        style={marketType === t ? { background: "rgba(45,212,191,0.1)", color: accent } : {}}
+                      >
+                        {t === MARKET_TYPE_BINARY ? "⚡ Binary (YES / NO)" : "# Numeric (value)"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">
+                    Resolution datetime (24h – 7 days from now)
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={resolutionInput}
+                    min={minDatetime}
+                    max={maxDatetime}
+                    onChange={(e) => setResolutionInput(e.target.value)}
+                    className="rounded-lg border border-[var(--border-strong)] bg-[var(--bg-base)] px-3 py-2 text-white focus:outline-none"
+                    style={{ fontFamily: "var(--font-mono)" }}
+                  />
+                </div>
+
+                <TxButton
+                  onClick={handleCreate}
+                  disabled={question.trim().length < 10}
+                  className="rounded-lg px-6 py-2 font-semibold hover:opacity-90 disabled:opacity-50 text-[#0a0a0f] bg-[var(--game-predictions)]"
+                  pendingLabel="Creating market (AI verifying…)"
+                  description="Creating prediction market"
                 >
-                  Binary (YES / NO)
-                </button>
-                <button
-                  onClick={() => setMarketType(1)}
-                  className={`rounded-lg border px-4 py-2 text-sm font-medium ${marketType === 1 ? "border-[var(--accent-platform)] bg-[rgba(139,92,246,0.15)] text-[var(--accent-platform-hi)]" : "border-[var(--border-strong)] text-gray-400 hover:border-gray-500"}`}
-                >
-                  Numeric (specific value)
-                </button>
+                  Create Market
+                </TxButton>
               </div>
-            </div>
+            </section>
 
-            <div>
-              <label className="block text-sm text-gray-400 mb-1">
-                Resolution datetime (24h – 7 days from now)
-              </label>
-              <input
-                type="datetime-local"
-                value={resolutionInput}
-                min={minDatetime}
-                max={maxDatetime}
-                onChange={(e) => setResolutionInput(e.target.value)}
-                className="rounded-lg border border-[var(--border-strong)] bg-[var(--bg-base)] px-3 py-2 text-white focus:border-indigo-500 focus:outline-none"
-              />
-            </div>
+            {openMarkets.length > 0 && (
+              <section className="mb-8">
+                <SectionHeader title="Active · Open" count={openMarkets.length} accent={accent} />
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {openMarkets.map((m) => <MarketCard key={Number(m.id)} market={m} />)}
+                </div>
+              </section>
+            )}
 
-            <TxButton
-              onClick={handleCreate}
-              disabled={question.trim().length < 10}
-              className="rounded-lg bg-indigo-600 px-6 py-2 font-semibold hover:bg-indigo-500 disabled:opacity-50"
-              pendingLabel="Creating market (AI verifying…)"
-              description="Creating prediction market"
-            >
-              Create Market
-            </TxButton>
-          </div>
-        </section>
+            {resolvingMarkets.length > 0 && (
+              <section className="mb-8">
+                <SectionHeader title="Pending Resolution" count={resolvingMarkets.length} accent="var(--warning)" />
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {resolvingMarkets.map((m) => <MarketCard key={Number(m.id)} market={m} />)}
+                </div>
+              </section>
+            )}
 
-        {/* Open Markets */}
-        {openMarkets.length > 0 && (
-          <section className="mb-8">
-            <h2 className="mb-4 text-lg font-semibold">Open Markets</h2>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {openMarkets.map((m) => (
-                <MarketCard key={Number(m.id)} market={m} />
-              ))}
-            </div>
-          </section>
-        )}
+            {resolvedMarkets.length > 0 && (
+              <section className="mb-8 opacity-75">
+                <SectionHeader title="Resolved" count={resolvedMarkets.length} accent="var(--text-tertiary)" />
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {resolvedMarkets.map((m) => (
+                    <MarketCard
+                      key={Number(m.id)}
+                      market={m}
+                      username={m.ranking[0] ? winnerNames[m.ranking[0].toLowerCase()] : undefined}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
 
-        {/* Resolving Soon */}
-        {resolvingMarkets.length > 0 && (
-          <section className="mb-8">
-            <h2 className="mb-4 text-lg font-semibold text-amber-400">Ready to Resolve</h2>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {resolvingMarkets.map((m) => (
-                <MarketCard key={Number(m.id)} market={m} />
-              ))}
-            </div>
-          </section>
-        )}
+            {openMarkets.length === 0 && resolvingMarkets.length === 0 && resolvedMarkets.length === 0 && (
+              <p className="text-center py-8" style={{ color: "var(--text-tertiary)" }}>
+                No markets yet — create the first one!
+              </p>
+            )}
 
-        {/* Resolved */}
-        {resolvedMarkets.length > 0 && (
-          <section className="mb-8">
-            <h2 className="mb-4 text-lg font-semibold">Resolved</h2>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {resolvedMarkets.map((m) => (
-                <MarketCard
-                  key={Number(m.id)}
-                  market={m}
-                  username={m.ranking[0] ? winnerNames[m.ranking[0].toLowerCase()] : undefined}
-                />
-              ))}
-            </div>
-          </section>
-        )}
-
-        {openMarkets.length === 0 && resolvingMarkets.length === 0 && resolvedMarkets.length === 0 && (
-          <p className="text-gray-500 text-center py-8">No markets yet — create the first one!</p>
-        )}
-
-        {/* My Predictions */}
-        {myMarkets.length > 0 && (
-          <section className="mt-4 mb-8">
-            <h2 className="mb-4 text-lg font-semibold">My Predictions</h2>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {myMarkets.map((m) => (
-                <MarketCard
-                  key={Number(m.id)}
-                  market={m}
-                  username={m.ranking[0] ? winnerNames[m.ranking[0].toLowerCase()] : undefined}
-                />
-              ))}
-            </div>
-          </section>
-        )}
-      </main>
+            {myMarkets.length > 0 && (
+              <section className="mt-4 mb-8">
+                <SectionHeader title="My Predictions" count={myMarkets.length} accent={accent} />
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {myMarkets.map((m) => (
+                    <MarketCard
+                      key={Number(m.id)}
+                      market={m}
+                      username={m.ranking[0] ? winnerNames[m.ranking[0].toLowerCase()] : undefined}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
+          </main>
+        </div>
       </AppShell>
     </AuthGuard>
   );

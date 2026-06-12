@@ -2,6 +2,7 @@
 
 import AuthGuard from "@/components/AuthGuard";
 import TxButton from "@/components/TxButton";
+import JudgeReasoning from "@/components/shared/JudgeReasoning";
 import Link from "next/link";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
@@ -32,20 +33,34 @@ function useCountdown(resolutionTs: number | null): { display: string; expired: 
     return () => clearInterval(id);
   }, [resolutionTs]);
 
-  if (secsLeft === null) return { display: "", expired: false, color: "text-white" };
-  if (secsLeft === 0) return { display: "Deadline reached", expired: true, color: "text-red-400" };
+  if (secsLeft === null) return { display: "", expired: false, color: "var(--text-primary)" };
+  if (secsLeft === 0) return { display: "Deadline reached", expired: true, color: "var(--danger)" };
 
   const d = Math.floor(secsLeft / 86400);
   const h = Math.floor((secsLeft % 86400) / 3600);
   const m = Math.floor((secsLeft % 3600) / 60);
   const s = secsLeft % 60;
   const display = d > 0
-    ? `${d}d ${h}h ${m}m remaining`
+    ? `${d}d ${h}h ${m}m`
     : h > 0
-    ? `${h}h ${m}m ${s}s remaining`
-    : `${m}:${String(s).padStart(2, "0")} remaining`;
-  const color = secsLeft < 300 ? "text-red-400" : secsLeft < 3600 ? "text-amber-400" : "text-white";
+    ? `${h}h ${m}m ${s}s`
+    : `${m}:${String(s).padStart(2, "0")}`;
+  const color = secsLeft < 300 ? "var(--danger)" : secsLeft < 3600 ? "var(--warning)" : "var(--game-predictions)";
   return { display, expired: false, color };
+}
+
+function PredBg() {
+  return (
+    <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+      <div
+        className="absolute inset-0"
+        style={{
+          backgroundImage:
+            "repeating-linear-gradient(90deg, rgba(45,212,191,0.03) 0px, rgba(45,212,191,0.03) 1px, transparent 1px, transparent 20%)",
+        }}
+      />
+    </div>
+  );
 }
 
 export default function MarketPage() {
@@ -64,12 +79,8 @@ export default function MarketPage() {
 
   const fetchMarket = useCallback(async () => {
     const m = await getMarket(marketIdNum);
-    if (m) {
-      setMarket(m);
-      setNullCount(0);
-    } else {
-      setNullCount((n) => n + 1);
-    }
+    if (m) { setMarket(m); setNullCount(0); }
+    else setNullCount((n) => n + 1);
     setLoading(false);
     return m;
   }, [marketIdNum]);
@@ -80,15 +91,12 @@ export default function MarketPage() {
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [fetchMarket]);
 
-  // Resolve usernames
   useEffect(() => {
     if (!market) return;
     market.players.forEach((addr) => {
       if (!playerUsernames[addr.toLowerCase()]) {
         getUserProfile(addr).then((p) => {
-          if (p?.username) {
-            setPlayerUsernames((prev) => ({ ...prev, [addr.toLowerCase()]: String(p.username) }));
-          }
+          if (p?.username) setPlayerUsernames((prev) => ({ ...prev, [addr.toLowerCase()]: String(p.username) }));
         });
       }
     });
@@ -100,6 +108,7 @@ export default function MarketPage() {
   const resolutionTs = market ? Number(market.resolution_datetime) : null;
   const deadlinePassed = resolutionTs !== null && Date.now() / 1000 > resolutionTs;
   const countdown = useCountdown(resolutionTs && !deadlinePassed ? resolutionTs : null);
+  const accent = "var(--game-predictions)";
 
   const playerIdx = market ? market.players.findIndex((p) => p.toLowerCase() === currentAddr) : -1;
   const isPlayer = playerIdx >= 0;
@@ -108,7 +117,6 @@ export default function MarketPage() {
   const winnerAddr = market?.ranking[0]?.toLowerCase();
   const winnerUsername = winnerAddr ? (playerUsernames[winnerAddr] ?? winnerAddr.slice(0, 10) + "…") : null;
 
-  // Distribution preview (binary only)
   const yesCount = isBinary ? market?.predictions.filter((p) => p === true).length ?? 0 : 0;
   const noCount = isBinary ? market?.predictions.filter((p) => p === false).length ?? 0 : 0;
   const totalPlayers = market?.players.length ?? 0;
@@ -117,11 +125,15 @@ export default function MarketPage() {
     ? new Date(resolutionTs * 1000).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
     : "";
 
+  function displayName(addr: string) {
+    return playerUsernames[addr.toLowerCase()] ?? addr.slice(0, 10) + "…";
+  }
+
   if (loading || (!market && nullCount < 3)) {
     return (
       <AuthGuard>
         <main className="flex min-h-screen items-center justify-center">
-          <p className="text-gray-400">Loading market…</p>
+          <p style={{ color: "var(--text-tertiary)" }}>Loading market…</p>
         </main>
       </AuthGuard>
     );
@@ -131,8 +143,8 @@ export default function MarketPage() {
     return (
       <AuthGuard>
         <main className="flex min-h-screen flex-col items-center justify-center gap-4 p-8">
-          <p className="text-gray-400">Market not found.</p>
-          <Link href="/predictions" className="text-indigo-400 hover:underline">← Predictions</Link>
+          <p style={{ color: "var(--text-tertiary)" }}>Market not found.</p>
+          <Link href="/predictions" className="hover:underline" style={{ color: accent }}>← Predictions</Link>
         </main>
       </AuthGuard>
     );
@@ -140,277 +152,367 @@ export default function MarketPage() {
 
   return (
     <AuthGuard>
-      <main className="min-h-screen p-8">
-        <div className="mb-6 flex items-center justify-between">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-xs border border-gray-600 rounded px-1.5 py-0.5 text-gray-400">
-                {isBinary ? "YES / NO" : "Numeric"}
-              </span>
-              <span className="text-xs text-gray-500">Market #{marketId}</span>
+      <div className="relative min-h-screen overflow-hidden">
+        <PredBg />
+        <main className="relative p-4 sm:p-8 max-w-3xl mx-auto">
+          <div className="mb-6 flex items-center justify-between">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span
+                  className="text-xs border rounded px-1.5 py-0.5 font-mono"
+                  style={{ borderColor: `color-mix(in srgb, ${accent} 30%, transparent)`, color: accent }}
+                >
+                  {isBinary ? "⚡ YES / NO" : "# Numeric"}
+                </span>
+                <span className="text-xs font-mono" style={{ color: "var(--text-tertiary)" }}>Market #{marketId}</span>
+              </div>
+              <h1 className="text-xl font-bold max-w-2xl">{market.question}</h1>
             </div>
-            <h1 className="text-xl font-bold max-w-2xl">{market.question}</h1>
+            <Link href="/predictions" className="hover:underline text-sm shrink-0 ml-4" style={{ color: accent }}>
+              ← Lobby
+            </Link>
           </div>
-          <Link href="/predictions" className="text-indigo-400 hover:underline text-sm shrink-0 ml-4">← Lobby</Link>
-        </div>
 
-        {/* Resolution time */}
-        {state !== PRED_STATE_CANCELLED && (
-          <div className="mb-6 rounded-xl border border-gray-700 p-4">
-            <p className="text-xs text-gray-500 uppercase tracking-widest mb-1">Resolution</p>
-            <p className="text-white">{resolutionDate}</p>
-            {!deadlinePassed && countdown.display && (
-              <p className={`text-sm mt-1 ${countdown.color}`}>{countdown.display}</p>
-            )}
-            {deadlinePassed && state === PRED_STATE_OPEN && (
-              <p className="text-amber-400 text-sm mt-1">Past deadline — awaiting resolution</p>
-            )}
-          </div>
-        )}
-
-        {/* ── STATE_REJECTED ── */}
-        {state === PRED_STATE_REJECTED && (
-          <div className="space-y-4">
-            <div className="rounded-xl border border-red-700 bg-red-900/10 p-5">
-              <p className="text-sm font-semibold uppercase tracking-widest text-red-400 mb-2">Market Rejected</p>
-              <p className="text-sm text-gray-300">{market.rejection_reason}</p>
-            </div>
-            <Link
-              href="/predictions"
-              className="inline-block rounded-lg bg-indigo-600 px-6 py-2 font-semibold hover:bg-indigo-500"
+          {/* Resolution info */}
+          {state !== PRED_STATE_CANCELLED && (
+            <div
+              className="mb-6 rounded-xl border p-4"
+              style={{ borderColor: `color-mix(in srgb, ${accent} 20%, var(--border))` }}
             >
-              Create a new market
-            </Link>
-          </div>
-        )}
-
-        {/* ── STATE_CANCELLED ── */}
-        {state === PRED_STATE_CANCELLED && (
-          <div className="space-y-4 text-center">
-            <p className="text-gray-400">This market was cancelled.</p>
-            <Link href="/predictions" className="inline-block rounded-lg bg-indigo-600 px-6 py-2 font-semibold hover:bg-indigo-500">
-              Back to Lobby
-            </Link>
-          </div>
-        )}
-
-        {/* ── STATE_OPEN ── */}
-        {state === PRED_STATE_OPEN && (
-          <div className="space-y-6">
-            {/* Distribution */}
-            {totalPlayers > 0 && isBinary && (
-              <div className="rounded-xl border border-gray-700 p-4">
-                <p className="text-xs text-gray-500 uppercase tracking-widest mb-2">Current predictions ({totalPlayers} players)</p>
-                <div className="flex gap-4 text-sm">
-                  <span className="text-green-400">YES: {yesCount}</span>
-                  <span className="text-red-400">NO: {noCount}</span>
-                </div>
-              </div>
-            )}
-            {totalPlayers > 0 && !isBinary && (
-              <div className="rounded-xl border border-gray-700 p-4">
-                <p className="text-xs text-gray-500 uppercase tracking-widest mb-1">{totalPlayers} player{totalPlayers !== 1 ? "s" : ""} have predicted</p>
-              </div>
-            )}
-
-            {/* My current prediction */}
-            {isPlayer && myPrediction !== null && (
-              <div className="rounded-xl border border-indigo-800 bg-indigo-900/20 p-4">
-                <p className="text-sm text-indigo-300">
-                  Your prediction:{" "}
-                  <strong>
-                    {isBinary ? (myPrediction === true ? "YES" : "NO") : String(myPrediction)}
-                  </strong>
-                  {!deadlinePassed && " (editable until deadline)"}
-                </p>
-              </div>
-            )}
-
-            {/* Predict form — only when deadline hasn't passed */}
-            {!deadlinePassed && (
-              <div className="rounded-xl border border-gray-700 p-5">
-                <p className="mb-3 text-sm font-semibold text-gray-400 uppercase tracking-widest">
-                  {isPlayer ? "Update prediction" : "Make your prediction"}
-                </p>
-
-                {isBinary ? (
-                  <div className="flex gap-3 mb-4">
-                    <button
-                      onClick={() => setBinaryPick(true)}
-                      className={`rounded-lg border px-6 py-3 font-semibold ${binaryPick === true ? "border-green-500 bg-green-900/30 text-green-300" : "border-gray-600 text-gray-300 hover:border-green-700"}`}
-                    >
-                      YES
-                    </button>
-                    <button
-                      onClick={() => setBinaryPick(false)}
-                      className={`rounded-lg border px-6 py-3 font-semibold ${binaryPick === false ? "border-red-500 bg-red-900/30 text-red-300" : "border-gray-600 text-gray-300 hover:border-red-700"}`}
-                    >
-                      NO
-                    </button>
-                  </div>
-                ) : (
-                  <input
-                    type="number"
-                    value={numericInput}
-                    onChange={(e) => setNumericInput(e.target.value)}
-                    placeholder="Enter your numeric prediction"
-                    className="mb-4 w-full max-w-xs rounded-lg border border-gray-600 bg-gray-900 px-4 py-3 text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
-                  />
-                )}
-
-                <TxButton
-                  onClick={async () => {
-                    if (!wallet) throw new Error("No wallet");
-                    if (isBinary) {
-                      if (binaryPick === null) throw new Error("Select YES or NO");
-                      await joinAndPredictBinary(marketIdNum, binaryPick, wallet);
-                    } else {
-                      const n = parseFloat(numericInput);
-                      if (isNaN(n)) throw new Error("Enter a valid number");
-                      await joinAndPredictNumeric(marketIdNum, n, wallet);
-                    }
-                    fetchMarket();
-                  }}
-                  disabled={isBinary ? binaryPick === null : numericInput.trim() === ""}
-                  className="rounded-lg bg-indigo-600 px-6 py-2 font-semibold hover:bg-indigo-500 disabled:opacity-50"
-                  description="Submitting prediction"
-                >
-                  {isPlayer ? "Update prediction" : "Submit prediction"}
-                </TxButton>
-              </div>
-            )}
-
-            {/* Resolve button — after deadline */}
-            {deadlinePassed && (
-              <div className="rounded-xl border border-amber-800 bg-amber-900/10 p-5">
-                <p className="text-sm text-amber-400 mb-3">
-                  Deadline passed — anyone can resolve this market now
-                </p>
-                <TxButton
-                  onClick={async () => {
-                    if (!wallet) throw new Error("No wallet");
-                    await resolveMarket(marketIdNum, wallet);
-                    fetchMarket();
-                  }}
-                  className="rounded-lg bg-amber-600 px-6 py-2 font-semibold hover:bg-amber-500 disabled:opacity-50"
-                  pendingLabel="Fetching real-world data via validators…"
-                  description="Resolving prediction market"
-                >
-                  Resolve Market
-                </TxButton>
-              </div>
-            )}
-
-            {/* Creator cancel option */}
-            {market.creator.toLowerCase() === currentAddr && totalPlayers === 0 && !deadlinePassed && (
-              <TxButton
-                onClick={async () => {
-                  if (!wallet) throw new Error("No wallet");
-                  await cancelMarketPredictions(marketIdNum, wallet);
-                  fetchMarket();
-                }}
-                className="rounded-lg border border-gray-600 px-4 py-1.5 text-sm text-gray-400 hover:border-red-700 hover:text-red-400 disabled:opacity-40"
-                description="Cancelling market"
-              >
-                Cancel market
-              </TxButton>
-            )}
-          </div>
-        )}
-
-        {/* ── STATE_RESOLVED ── */}
-        {state === PRED_STATE_RESOLVED && (
-          <div className="space-y-6">
-            {/* Actual answer */}
-            <div className="rounded-xl border border-green-700 bg-green-900/10 p-5">
-              <p className="text-xs font-semibold uppercase tracking-widest text-green-400 mb-2">Actual Answer</p>
-              <p className="text-2xl font-bold">
-                {isBinary
-                  ? market.actual_answer === "true" ? "YES" : "NO"
-                  : market.actual_answer}
+              <p className="text-xs uppercase tracking-widest mb-1 font-mono" style={{ color: "var(--text-tertiary)" }}>
+                Resolution
               </p>
-              {market.actual_answer_source && (
-                <p className="mt-1 text-xs text-gray-500">Source: {market.actual_answer_source}</p>
+              <p className="font-mono" style={{ color: "var(--text-primary)" }}>{resolutionDate}</p>
+              {!deadlinePassed && countdown.display && (
+                <p className="text-sm mt-1 font-mono font-bold" style={{ color: countdown.color }}>
+                  {countdown.display}
+                </p>
+              )}
+              {deadlinePassed && state === PRED_STATE_OPEN && (
+                <p className="text-amber-400 text-sm mt-1 font-mono">Past deadline — awaiting resolution</p>
               )}
             </div>
+          )}
 
-            {/* AI reasoning */}
-            {market.resolution_reasoning && (
-              <div className="rounded-xl border border-gray-700 p-4">
-                <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-gray-500">AI Resolution Reasoning</p>
-                <p className="text-sm text-gray-300">{market.resolution_reasoning}</p>
+          {/* ── REJECTED ── */}
+          {state === PRED_STATE_REJECTED && (
+            <div className="space-y-4">
+              <div className="rounded-xl border border-red-700 bg-red-900/10 p-5">
+                <p className="text-sm font-semibold uppercase tracking-widest text-red-400 mb-2">Market Rejected</p>
+                <p className="text-sm text-gray-300">{market.rejection_reason}</p>
               </div>
-            )}
+              <Link
+                href="/predictions"
+                className="inline-block rounded-lg px-6 py-2 font-semibold hover:opacity-90 text-[#0a0a0f]"
+                style={{ background: accent }}
+              >
+                Create a new market
+              </Link>
+            </div>
+          )}
 
-            {/* Winner */}
-            {market.ranking.length > 0 && (
-              <div className="rounded-xl border border-yellow-700 bg-yellow-900/10 p-5 text-center">
-                <p className="text-xs font-semibold uppercase tracking-widest text-yellow-400 mb-1">Winner</p>
-                <p className="text-xl font-bold">{winnerUsername}</p>
-                {winnerAddr === currentAddr && <p className="text-green-400 text-sm mt-1">That&apos;s you!</p>}
-              </div>
-            )}
+          {/* ── CANCELLED ── */}
+          {state === PRED_STATE_CANCELLED && (
+            <div className="space-y-4 text-center">
+              <p style={{ color: "var(--text-secondary)" }}>This market was cancelled.</p>
+              <Link href="/predictions" className="inline-block rounded-lg px-6 py-2 font-semibold hover:opacity-90 text-[#0a0a0f]" style={{ background: accent }}>
+                Back to Lobby
+              </Link>
+            </div>
+          )}
 
-            {/* Leaderboard */}
-            {market.ranking.length > 0 && (
-              <div className="rounded-xl border border-gray-700 p-4">
-                <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-gray-500">Leaderboard</p>
-                <div className="space-y-2">
-                  {market.ranking.map((addr, rank) => {
-                    const addrLow = addr.toLowerCase();
-                    const username = playerUsernames[addrLow] ?? addrLow.slice(0, 10) + "…";
-                    const pIdx = market.players.findIndex((p) => p.toLowerCase() === addrLow);
-                    const pred = pIdx >= 0 ? market.predictions[pIdx] : null;
-                    const predDisplay = pred === null ? "—"
-                      : isBinary ? (pred === true ? "YES" : "NO")
-                      : String(pred);
-                    const isWinner = rank === 0;
-                    const isMe = addrLow === currentAddr;
-
-                    // distance for numeric
-                    let distDisplay = "";
-                    if (!isBinary && market.actual_answer && pred !== null) {
-                      const dist = Math.abs(Number(pred) - Number(market.actual_answer));
-                      distDisplay = `±${dist.toLocaleString()}`;
-                    }
-
-                    return (
+          {/* ── OPEN ── */}
+          {state === PRED_STATE_OPEN && (
+            <div className="space-y-6">
+              {/* Distribution */}
+              {totalPlayers > 0 && isBinary && (
+                <div
+                  className="rounded-xl border p-4"
+                  style={{ borderColor: `color-mix(in srgb, ${accent} 15%, var(--border))` }}
+                >
+                  <p
+                    className="text-xs uppercase tracking-widest mb-3 font-mono"
+                    style={{ color: "var(--text-tertiary)" }}
+                  >
+                    {totalPlayers} prediction{totalPlayers !== 1 ? "s" : ""} submitted
+                  </p>
+                  <div className="flex gap-6 text-sm font-mono font-bold">
+                    <span style={{ color: "var(--success)" }}>YES: {yesCount}</span>
+                    <span style={{ color: "var(--danger)" }}>NO: {noCount}</span>
+                  </div>
+                  {totalPlayers > 0 && (
+                    <div className="mt-3 h-2 rounded-full overflow-hidden" style={{ background: "var(--bg-elevated)" }}>
                       <div
-                        key={addr}
-                        className={`rounded-lg border p-3 flex items-center gap-3 ${isWinner ? "border-yellow-700 bg-yellow-900/10" : isMe ? "border-indigo-800 bg-indigo-900/10" : "border-gray-700"}`}
-                      >
-                        <span className={`text-sm font-bold w-6 text-center ${isWinner ? "text-yellow-400" : "text-gray-400"}`}>
-                          #{rank + 1}
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <span className="text-sm font-medium">{username}</span>
-                          {isMe && <span className="ml-1 text-xs text-indigo-400">(you)</span>}
-                        </div>
-                        <div className="text-right text-xs text-gray-400">
-                          <div>Predicted: <strong className="text-white">{predDisplay}</strong></div>
-                          {distDisplay && <div>{distDisplay}</div>}
-                          {isBinary && pred !== null && (
-                            <div className={pred === (market.actual_answer === "true") ? "text-green-400" : "text-red-400"}>
-                              {pred === (market.actual_answer === "true") ? "Correct" : "Incorrect"}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
+                        className="h-full rounded-full transition-all duration-500"
+                        style={{
+                          width: `${(yesCount / totalPlayers) * 100}%`,
+                          background: "var(--success)",
+                        }}
+                      />
+                    </div>
+                  )}
                 </div>
-              </div>
-            )}
+              )}
+              {totalPlayers > 0 && !isBinary && (
+                <div className="rounded-xl border border-[var(--border)] p-4">
+                  <p className="text-xs uppercase tracking-widest font-mono" style={{ color: "var(--text-tertiary)" }}>
+                    {totalPlayers} player{totalPlayers !== 1 ? "s" : ""} have predicted
+                  </p>
+                </div>
+              )}
 
-            <Link
-              href="/predictions"
-              className="inline-block rounded-lg bg-indigo-600 px-6 py-2 font-semibold hover:bg-indigo-500"
-            >
-              Back to Lobby
-            </Link>
-          </div>
-        )}
-      </main>
+              {/* My prediction */}
+              {isPlayer && myPrediction !== null && (
+                <div
+                  className="rounded-xl border p-4"
+                  style={{ borderColor: `color-mix(in srgb, ${accent} 30%, transparent)`, background: `color-mix(in srgb, ${accent} 5%, transparent)` }}
+                >
+                  <p className="text-sm font-mono" style={{ color: accent }}>
+                    Your prediction:{" "}
+                    <strong>
+                      {isBinary ? (myPrediction === true ? "YES" : "NO") : String(myPrediction)}
+                    </strong>
+                    {!deadlinePassed && <span className="font-normal" style={{ color: "var(--text-tertiary)" }}> (editable until deadline)</span>}
+                  </p>
+                </div>
+              )}
+
+              {/* Predict form */}
+              {!deadlinePassed && (
+                <div
+                  className="rounded-xl border p-5"
+                  style={{ borderColor: `color-mix(in srgb, ${accent} 15%, var(--border))` }}
+                >
+                  <p
+                    className="mb-3 text-sm font-semibold uppercase tracking-widest font-mono"
+                    style={{ color: "var(--text-tertiary)" }}
+                  >
+                    {isPlayer ? "Update prediction" : "Make your prediction"}
+                  </p>
+
+                  {isBinary ? (
+                    <div className="flex gap-3 mb-4">
+                      {([true, false] as const).map((val) => (
+                        <button
+                          key={String(val)}
+                          onClick={() => setBinaryPick(val)}
+                          className="rounded-lg border px-8 py-3 font-semibold font-mono text-lg transition-all"
+                          style={
+                            binaryPick === val
+                              ? {
+                                  borderColor: val ? "var(--success)" : "var(--danger)",
+                                  background: val ? "rgba(52,211,153,0.12)" : "rgba(239,68,68,0.12)",
+                                  color: val ? "var(--success)" : "var(--danger)",
+                                }
+                              : { borderColor: "var(--border-strong)", color: "var(--text-secondary)" }
+                          }
+                        >
+                          {val ? "YES" : "NO"}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <input
+                      type="number"
+                      value={numericInput}
+                      onChange={(e) => setNumericInput(e.target.value)}
+                      placeholder="Enter your numeric prediction"
+                      className="mb-4 w-full max-w-xs rounded-lg border border-[var(--border-strong)] bg-[var(--bg-base)] px-4 py-3 placeholder-gray-500 focus:outline-none"
+                      style={{ fontFamily: "var(--font-mono)", color: "var(--text-primary)" }}
+                    />
+                  )}
+
+                  <TxButton
+                    onClick={async () => {
+                      if (!wallet) throw new Error("No wallet");
+                      if (isBinary) {
+                        if (binaryPick === null) throw new Error("Select YES or NO");
+                        await joinAndPredictBinary(marketIdNum, binaryPick, wallet);
+                      } else {
+                        const n = parseFloat(numericInput);
+                        if (isNaN(n)) throw new Error("Enter a valid number");
+                        await joinAndPredictNumeric(marketIdNum, n, wallet);
+                      }
+                      fetchMarket();
+                    }}
+                    disabled={isBinary ? binaryPick === null : numericInput.trim() === ""}
+                    className="rounded-lg px-6 py-2 font-semibold hover:opacity-90 disabled:opacity-50 text-[#0a0a0f]"
+                    style={{ background: accent } as React.CSSProperties}
+                    description="Submitting prediction"
+                  >
+                    {isPlayer ? "Update prediction" : "Submit prediction"}
+                  </TxButton>
+                </div>
+              )}
+
+              {/* Resolve */}
+              {deadlinePassed && (
+                <div
+                  className="rounded-xl border p-5"
+                  style={{ borderColor: "rgba(251,191,36,0.3)", background: "rgba(251,191,36,0.04)" }}
+                >
+                  <p className="text-sm text-amber-400 mb-3 font-mono">
+                    Deadline passed — anyone can resolve this market now
+                  </p>
+                  <TxButton
+                    onClick={async () => {
+                      if (!wallet) throw new Error("No wallet");
+                      await resolveMarket(marketIdNum, wallet);
+                      fetchMarket();
+                    }}
+                    className="rounded-lg px-6 py-2 font-semibold hover:opacity-90 text-[#0a0a0f]"
+                    style={{ background: accent } as React.CSSProperties}
+                    pendingLabel="Fetching real-world data via validators…"
+                    description="Resolving prediction market"
+                  >
+                    Resolve Market
+                  </TxButton>
+                </div>
+              )}
+
+              {market.creator.toLowerCase() === currentAddr && totalPlayers === 0 && !deadlinePassed && (
+                <TxButton
+                  onClick={async () => {
+                    if (!wallet) throw new Error("No wallet");
+                    await cancelMarketPredictions(marketIdNum, wallet);
+                    fetchMarket();
+                  }}
+                  className="rounded-lg border border-[var(--border-strong)] px-4 py-1.5 text-sm hover:border-red-700 hover:text-red-400 disabled:opacity-40"
+                  style={{ color: "var(--text-secondary)" } as React.CSSProperties}
+                  description="Cancelling market"
+                >
+                  Cancel market
+                </TxButton>
+              )}
+            </div>
+          )}
+
+          {/* ── RESOLVED ── */}
+          {state === PRED_STATE_RESOLVED && (
+            <div className="space-y-6">
+              {/* Large answer display */}
+              <div
+                className="rounded-xl border p-6 text-center"
+                style={{
+                  borderColor: `color-mix(in srgb, ${accent} 40%, transparent)`,
+                  background: `color-mix(in srgb, ${accent} 5%, var(--bg-elevated))`,
+                }}
+              >
+                <p
+                  className="text-xs font-semibold uppercase tracking-widest mb-2 font-mono"
+                  style={{ color: accent }}
+                >
+                  Actual Answer
+                </p>
+                <p
+                  className="font-bold leading-none"
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: isBinary ? "clamp(2rem, 6vw, 4rem)" : "clamp(2.5rem, 8vw, 5rem)",
+                    color: isBinary
+                      ? market.actual_answer === "true" ? "var(--success)" : "var(--danger)"
+                      : accent,
+                  }}
+                >
+                  {isBinary
+                    ? market.actual_answer === "true" ? "YES" : "NO"
+                    : market.actual_answer}
+                </p>
+              </div>
+
+              {/* AI reasoning */}
+              {market.resolution_reasoning && (
+                <JudgeReasoning
+                  reasoning={market.resolution_reasoning}
+                  game="predictions"
+                  verdict={isBinary ? (market.actual_answer === "true" ? "YES" : "NO") : market.actual_answer}
+                  sourceUrl={market.actual_answer_source ?? undefined}
+                />
+              )}
+
+              {/* Winner */}
+              {market.ranking.length > 0 && (
+                <div
+                  className="rounded-xl border p-5 text-center"
+                  style={{ borderColor: "rgba(251,191,36,0.3)", background: "rgba(251,191,36,0.04)" }}
+                >
+                  <p className="text-xs font-semibold uppercase tracking-widest text-amber-400 mb-1">Winner</p>
+                  <p className="text-xl font-bold">{winnerUsername}</p>
+                  {winnerAddr === currentAddr && <p className="text-green-400 text-sm mt-1">That&apos;s you!</p>}
+                </div>
+              )}
+
+              {/* Leaderboard */}
+              {market.ranking.length > 0 && (
+                <div className="rounded-xl border border-[var(--border)] p-4">
+                  <p
+                    className="mb-3 text-xs font-semibold uppercase tracking-widest font-mono"
+                    style={{ color: "var(--text-tertiary)" }}
+                  >
+                    Leaderboard
+                  </p>
+                  <div className="space-y-2">
+                    {market.ranking.map((addr, rank) => {
+                      const addrLow = addr.toLowerCase();
+                      const pIdx = market.players.findIndex((p) => p.toLowerCase() === addrLow);
+                      const pred = pIdx >= 0 ? market.predictions[pIdx] : null;
+                      const predDisplay = pred === null ? "—"
+                        : isBinary ? (pred === true ? "YES" : "NO")
+                        : String(pred);
+                      const isWinner = rank === 0;
+                      const isMe = addrLow === currentAddr;
+                      let distDisplay = "";
+                      if (!isBinary && market.actual_answer && pred !== null) {
+                        const dist = Math.abs(Number(pred) - Number(market.actual_answer));
+                        distDisplay = `±${dist.toLocaleString()}`;
+                      }
+
+                      return (
+                        <div
+                          key={addr}
+                          className="rounded-lg border p-3 flex items-center gap-3"
+                          style={{
+                            borderColor: isWinner ? "rgba(251,191,36,0.3)" : isMe ? `color-mix(in srgb, ${accent} 20%, transparent)` : "var(--border)",
+                            background: isWinner ? "rgba(251,191,36,0.04)" : isMe ? `color-mix(in srgb, ${accent} 4%, transparent)` : "transparent",
+                          }}
+                        >
+                          <span
+                            className="text-sm font-bold w-6 text-center font-mono"
+                            style={{ color: isWinner ? "var(--warning)" : "var(--text-tertiary)" }}
+                          >
+                            #{rank + 1}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <span className="text-sm font-medium">{displayName(addr)}</span>
+                            {isMe && <span className="ml-1 text-xs" style={{ color: accent }}>(you)</span>}
+                          </div>
+                          <div className="text-right text-xs font-mono" style={{ color: "var(--text-secondary)" }}>
+                            <div>Predicted: <strong style={{ color: "var(--text-primary)" }}>{predDisplay}</strong></div>
+                            {distDisplay && <div>{distDisplay}</div>}
+                            {isBinary && pred !== null && (
+                              <div style={{ color: pred === (market.actual_answer === "true") ? "var(--success)" : "var(--danger)" }}>
+                                {pred === (market.actual_answer === "true") ? "Correct" : "Incorrect"}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <Link
+                href="/predictions"
+                className="inline-block rounded-lg px-6 py-2 font-semibold hover:opacity-90 text-[#0a0a0f]"
+                style={{ background: accent }}
+              >
+                Back to Lobby
+              </Link>
+            </div>
+          )}
+        </main>
+      </div>
     </AuthGuard>
   );
 }

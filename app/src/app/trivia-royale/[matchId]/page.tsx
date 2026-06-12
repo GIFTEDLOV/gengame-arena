@@ -53,24 +53,6 @@ function optionText(opt: string): string {
   return opt.replace(/^[A-D][)\.]\s*/i, "").trim();
 }
 
-function RingsBg({ fast }: { fast?: boolean }) {
-  return (
-    <div className="pointer-events-none absolute inset-0 overflow-hidden flex items-center justify-center" aria-hidden="true">
-      {[1, 2, 3].map((i) => (
-        <div
-          key={i}
-          className={`absolute rounded-full ${fast ? "animate-trivia-ring-fast" : "animate-trivia-ring"}`}
-          style={{
-            width: `${i * 30}vw`,
-            height: `${i * 30}vw`,
-            border: "1px solid rgba(236,72,153,0.12)",
-            animationDelay: `${(i - 1) * 0.65}s`,
-          }}
-        />
-      ))}
-    </div>
-  );
-}
 
 export default function TriviaMatchPage() {
   const { matchId } = useParams<{ matchId: string }>();
@@ -210,7 +192,7 @@ export default function TriviaMatchPage() {
     return (
       <AuthGuard>
         <div className="relative min-h-screen overflow-hidden">
-          <RingsBg />
+
           <main className="relative min-h-screen p-8 max-w-2xl mx-auto">
             <Link href="/trivia-royale" className="hover:underline text-sm" style={{ color: accent }}>← Back to lobby</Link>
 
@@ -282,7 +264,7 @@ export default function TriviaMatchPage() {
     return (
       <AuthGuard>
         <div className="relative min-h-screen overflow-hidden">
-          <RingsBg />
+
           <main className="relative flex min-h-screen flex-col items-center justify-center gap-4 p-8">
             <div
               className="h-14 w-14 rounded-full border-t-2 animate-spin"
@@ -307,7 +289,7 @@ export default function TriviaMatchPage() {
     return (
       <AuthGuard>
         <div className="relative min-h-screen overflow-hidden">
-          <RingsBg />
+
           <main className="relative flex min-h-screen flex-col items-center justify-center gap-4 p-8">
             <div className="h-14 w-14 rounded-full border-t-2 animate-spin" style={{ borderColor: "var(--warning)" }} />
             <h2 className="text-xl font-bold">Resolving round {currentRound + 1}…</h2>
@@ -324,7 +306,7 @@ export default function TriviaMatchPage() {
     return (
       <AuthGuard>
         <div className="relative min-h-screen overflow-hidden">
-          <RingsBg fast={isUrgent} />
+
           <main className="relative min-h-screen p-4 sm:p-6 max-w-2xl mx-auto">
             {/* Top bar */}
             <div className="flex items-center justify-between mb-4 py-2">
@@ -444,7 +426,6 @@ export default function TriviaMatchPage() {
   return (
     <AuthGuard>
       <div className="relative min-h-screen overflow-hidden">
-        <RingsBg />
         <main className="relative min-h-screen p-8 max-w-2xl mx-auto">
           <div className="mb-6">
             <Link href="/trivia-royale" className="hover:underline text-sm" style={{ color: accent }}>← Lobby</Link>

@@ -49,18 +49,6 @@ function useCountdown(deadlineUnix: number | null) {
   return { display: `${mm}:${ss}`, expired: false, timerColor };
 }
 
-function RuledLineBg() {
-  return (
-    <div
-      className="pointer-events-none absolute inset-0"
-      aria-hidden="true"
-      style={{
-        backgroundImage:
-          "repeating-linear-gradient(180deg, transparent 0px, transparent 27px, rgba(254,243,199,0.05) 27px, rgba(254,243,199,0.05) 28px)",
-      }}
-    />
-  );
-}
 
 function ExcerptCard({ excerpt }: { excerpt: string }) {
   const [expanded, setExpanded] = useState(false);
@@ -217,7 +205,7 @@ export default function TitleMatchPage() {
     return (
       <AuthGuard>
         <div className="relative min-h-screen overflow-hidden">
-          <RuledLineBg />
+
           <main className="relative min-h-screen p-8 max-w-2xl mx-auto">
             <Link href="/title-wars" className="hover:underline text-sm" style={{ color: accent }}>← Back to lobby</Link>
             <div className="mt-8 rounded-xl border border-red-700 bg-red-900/20 p-6">
@@ -238,7 +226,7 @@ export default function TitleMatchPage() {
     return (
       <AuthGuard>
         <div className="relative min-h-screen overflow-hidden">
-          <RuledLineBg />
+
           <main className="relative min-h-screen p-8 max-w-2xl mx-auto">
             <Link href="/title-wars" className="hover:underline text-sm" style={{ color: accent }}>← Back to lobby</Link>
             <div className="mt-8 rounded-xl border border-red-700 bg-red-900/20 p-6">
@@ -259,7 +247,7 @@ export default function TitleMatchPage() {
     return (
       <AuthGuard>
         <div className="relative min-h-screen overflow-hidden">
-          <RuledLineBg />
+
           <main className="relative flex min-h-screen flex-col items-center justify-center gap-4 p-8">
             <div
               className="h-14 w-14 rounded-full border-t-2 animate-spin"
@@ -291,7 +279,7 @@ export default function TitleMatchPage() {
     return (
       <AuthGuard>
         <div className="relative min-h-screen overflow-hidden">
-          <RuledLineBg />
+
           <main className="relative min-h-screen p-8 max-w-3xl mx-auto">
             <Link href="/title-wars" className="hover:underline text-sm" style={{ color: accent }}>← Back to lobby</Link>
 
@@ -409,7 +397,7 @@ export default function TitleMatchPage() {
     return (
       <AuthGuard>
         <div className="relative min-h-screen overflow-hidden">
-          <RuledLineBg />
+
           <main className="relative min-h-screen p-8 max-w-2xl mx-auto">
             <OpenSubmissions
               match={match}
@@ -440,7 +428,6 @@ export default function TitleMatchPage() {
   return (
     <AuthGuard>
       <div className="relative min-h-screen overflow-hidden">
-        <RuledLineBg />
         <main className="relative min-h-screen p-8 max-w-2xl mx-auto">
           <div className="mb-6">
             <Link href="/title-wars" className="hover:underline text-sm" style={{ color: accent }}>← Lobby</Link>

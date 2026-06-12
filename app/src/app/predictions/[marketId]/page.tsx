@@ -50,19 +50,6 @@ function useCountdown(resolutionTs: number | null): { display: string; expired: 
   return { display, expired: false, color };
 }
 
-function PredBg() {
-  return (
-    <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
-      <div
-        className="absolute inset-0"
-        style={{
-          backgroundImage:
-            "repeating-linear-gradient(90deg, rgba(45,212,191,0.03) 0px, rgba(45,212,191,0.03) 1px, transparent 1px, transparent 20%)",
-        }}
-      />
-    </div>
-  );
-}
 
 export default function MarketPage() {
   const { marketId } = useParams<{ marketId: string }>();
@@ -160,7 +147,7 @@ export default function MarketPage() {
   return (
     <AuthGuard>
       <div className="relative min-h-screen overflow-hidden">
-        <PredBg />
+
         <main className="relative p-4 sm:p-8 max-w-3xl mx-auto">
           <div className="mb-6 flex items-center justify-between">
             <div>

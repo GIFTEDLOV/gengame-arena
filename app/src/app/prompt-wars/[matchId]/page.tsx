@@ -53,37 +53,6 @@ function useCountdown(deadlineUnix: number | null): {
   return { display: `${mm}:${ss} remaining`, expired: false, color };
 }
 
-function LetterTileBg() {
-  const tiles = [
-    { x: "4%",  y: "14%", letter: "A", size: 36 },
-    { x: "22%", y: "52%", letter: "Z", size: 28 },
-    { x: "65%", y: "18%", letter: "P", size: 32 },
-    { x: "82%", y: "62%", letter: "Q", size: 24 },
-    { x: "48%", y: "76%", letter: "X", size: 30 },
-    { x: "12%", y: "86%", letter: "B", size: 26 },
-    { x: "76%", y: "88%", letter: "W", size: 34 },
-    { x: "92%", y: "34%", letter: "R", size: 22 },
-  ];
-  return (
-    <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
-      <svg width="100%" height="100%" className="absolute inset-0">
-        {tiles.map((t, i) => (
-          <text
-            key={i}
-            x={t.x}
-            y={t.y}
-            fontSize={t.size}
-            fill="rgba(251,191,36,0.05)"
-            fontFamily="Georgia, serif"
-            fontStyle="italic"
-          >
-            {t.letter}
-          </text>
-        ))}
-      </svg>
-    </div>
-  );
-}
 
 const RANK_STYLES = [
   { label: "1st", border: "rgba(251,191,36,0.5)", bg: "rgba(251,191,36,0.06)", color: "var(--game-prompt-wars)" },
@@ -203,7 +172,7 @@ export default function MatchPage() {
   return (
     <AuthGuard>
       <div className="relative min-h-screen overflow-hidden">
-        <LetterTileBg />
+
         {shimmer && <div className="pw-shimmer-bar" />}
 
         <main className="relative p-4 sm:p-8 max-w-3xl mx-auto">

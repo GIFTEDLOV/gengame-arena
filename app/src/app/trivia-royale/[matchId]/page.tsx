@@ -384,8 +384,7 @@ export default function TriviaMatchPage() {
               <div className="mt-6">
                 <TxButton
                   onClick={async () => { await resolveTriviaRound(matchIdNum, wallet!); }}
-                  className="rounded-lg px-5 py-2 text-sm font-semibold hover:opacity-90"
-                  style={{ background: "var(--warning)", color: "#0a0a0f" } as React.CSSProperties}
+                  className="rounded-lg px-5 py-2 text-sm font-semibold hover:opacity-90 bg-[var(--warning)] text-[#0a0a0f]"
                   pendingLabel="Resolving round…"
                   description="Resolving Trivia round"
                 >
@@ -398,8 +397,7 @@ export default function TriviaMatchPage() {
               <div className="mt-4">
                 <TxButton
                   onClick={async () => { await resolveTriviaRound(matchIdNum, wallet!); }}
-                  className="rounded-lg px-5 py-2 text-sm font-semibold hover:opacity-90 text-white"
-                  style={{ background: "var(--success)" } as React.CSSProperties}
+                  className="rounded-lg px-5 py-2 text-sm font-semibold hover:opacity-90 text-white bg-[var(--success)]"
                   pendingLabel="Resolving round…"
                   description="Resolving Trivia round"
                 >

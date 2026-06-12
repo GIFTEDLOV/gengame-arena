@@ -260,7 +260,7 @@ export default function MatchPage() {
           {process.env.NODE_ENV === "development" && isPlayer && state === STATE_FULL && (
             <div className="mb-4">
               <TxButton
-                onClick={() => devForceJudge(matchIdNum, wallet).then(() => fetchMatch())}
+                onClick={() => devForceJudge(matchIdNum, wallet).then(() => { fetchMatch(); })}
                 className="rounded border border-orange-700 bg-orange-950 px-2 py-0.5 text-xs text-orange-400 hover:bg-orange-900"
                 pendingLabel="Skipping…"
               >
@@ -317,7 +317,7 @@ export default function MatchPage() {
                 <div className="flex flex-wrap gap-3">
                   {!isPlayer && (
                     <TxButton
-                      onClick={() => joinPromptWarsMatch(matchIdNum, wallet).then(() => fetchMatch())}
+                      onClick={() => joinPromptWarsMatch(matchIdNum, wallet).then(() => { fetchMatch(); })}
                       className="rounded-lg px-6 py-2 font-semibold hover:opacity-90 text-[#0a0a0f] bg-[var(--game-prompt-wars)]"
                       description="Joining Prompt Wars match"
                     >
@@ -327,7 +327,7 @@ export default function MatchPage() {
 
                   {isHost && totalPlayers >= 2 && (
                     <TxButton
-                      onClick={() => startMatch(matchIdNum, wallet).then(() => fetchMatch())}
+                      onClick={() => startMatch(matchIdNum, wallet).then(() => { fetchMatch(); })}
                       className="rounded-lg px-6 py-2 font-semibold hover:opacity-90 text-[#0a0a0f] bg-[var(--game-prompt-wars)]"
                       pendingLabel="Starting…"
                       description="Starting Prompt Wars match"
@@ -352,7 +352,7 @@ export default function MatchPage() {
 
               {match.players[0]?.toLowerCase() === currentAddr && canCancel && (
                 <TxButton
-                  onClick={() => cancelMatch(matchIdNum, wallet).then(() => fetchMatch())}
+                  onClick={() => cancelMatch(matchIdNum, wallet).then(() => { fetchMatch(); })}
                   className="rounded-lg border border-red-700 px-4 py-1.5 text-sm text-red-400 hover:bg-red-900/20"
                   description="Cancelling match"
                 >
@@ -391,7 +391,7 @@ export default function MatchPage() {
                       style={{ fontFamily: "var(--font-serif)", color: "var(--text-primary)" }}
                     />
                     <TxButton
-                      onClick={() => submitPrompt(matchIdNum, prompt, wallet).then(() => fetchMatch())}
+                      onClick={() => submitPrompt(matchIdNum, prompt, wallet).then(() => { fetchMatch(); })}
                       disabled={prompt.length === 0}
                       className="rounded-lg px-6 py-2 font-semibold hover:opacity-90 disabled:opacity-50 text-[#0a0a0f] bg-[var(--game-prompt-wars)]"
                       description="Submitting prompt"
@@ -406,7 +406,7 @@ export default function MatchPage() {
 
               {isPlayer && (allSubmitted || deadlinePassed) && (
                 <TxButton
-                  onClick={() => judgeMatch(matchIdNum, wallet).then(() => fetchMatch())}
+                  onClick={() => judgeMatch(matchIdNum, wallet).then(() => { fetchMatch(); })}
                   className="rounded-lg px-6 py-3 font-semibold hover:opacity-90 text-[#0a0a0f] bg-[var(--game-prompt-wars)]"
                   pendingLabel="Judging… (this may take a minute)"
                   description="Judging Prompt Wars match"

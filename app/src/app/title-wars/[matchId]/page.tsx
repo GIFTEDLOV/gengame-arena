@@ -677,8 +677,7 @@ function OpenSubmissions({
           <p className="mb-2 font-mono">DEV: force-judge</p>
           <TxButton
             onClick={async () => { await judgeTitleMatch(matchIdNum, wallet!); }}
-            className="rounded px-3 py-1 text-xs hover:opacity-80"
-            style={{ background: "var(--bg-elevated)" } as React.CSSProperties}
+            className="rounded px-3 py-1 text-xs hover:opacity-80 bg-[var(--bg-elevated)]"
             pendingLabel="Force judging…"
           >
             Skip deadline → Judge

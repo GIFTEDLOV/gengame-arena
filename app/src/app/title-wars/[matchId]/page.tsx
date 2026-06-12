@@ -23,6 +23,7 @@ import {
 } from "@/lib/genlayer";
 import type { TitleMatch } from "@/lib/genlayer";
 import { useActiveWallet } from "@/lib/useActiveWallet";
+import { useAutoResolve } from "@/lib/useAutoResolve";
 
 const accent = "var(--game-title-wars)";
 
@@ -199,6 +200,12 @@ export default function TitleMatchPage() {
   const deadline = match.submission_deadline && Number(match.submission_deadline) > 0
     ? Number(match.submission_deadline) : null;
   const submittedCount = match.titles.filter((t) => t !== "").length;
+
+  const { resolving: autoResolving } = useAutoResolve({
+    deadlineUnix: deadline ?? 0,
+    isActive: state === TITLE_STATE_OPEN,
+    resolveFn: async () => { await judgeTitleMatch(matchIdNum, wallet!); },
+  });
   const myIndex = currentAddr
     ? match.players.findIndex((p) => p.toLowerCase() === currentAddr)
     : -1;
@@ -418,6 +425,7 @@ export default function TitleMatchPage() {
               onSubmit={() => setSubmittedThisSession(true)}
               titleInput={titleInput}
               setTitleInput={setTitleInput}
+              autoResolving={autoResolving}
             />
           </main>
         </div>
@@ -564,6 +572,7 @@ function OpenSubmissions({
   onSubmit,
   titleInput,
   setTitleInput,
+  autoResolving,
 }: {
   match: TitleMatch;
   matchIdNum: number;
@@ -578,6 +587,7 @@ function OpenSubmissions({
   onSubmit: () => void;
   titleInput: string;
   setTitleInput: (v: string) => void;
+  autoResolving: boolean;
 }) {
   const MAX_TITLE = 100;
   const { display, expired, timerColor } = useCountdown(deadline);
@@ -596,13 +606,23 @@ function OpenSubmissions({
     <div>
       <ExcerptCard excerpt={match.excerpt} />
 
-      {/* Countdown */}
+      {/* Countdown — 3 states: active, expired-awaiting, resolving */}
       {deadline && (
-        <div
-          className="text-5xl font-mono font-bold text-center mb-6 leading-none"
-          style={{ color: timerColor }}
-        >
-          {display}
+        <div className="text-5xl font-mono font-bold text-center mb-6 leading-none">
+          {autoResolving ? (
+            <span
+              className="text-2xl animate-resolve-pulse"
+              style={{ color: "var(--game-title-wars)" }}
+            >
+              Resolving…
+            </span>
+          ) : expired ? (
+            <span className="text-xl" style={{ color: "var(--text-tertiary)" }}>
+              Awaiting judgement
+            </span>
+          ) : (
+            <span style={{ color: timerColor }}>{display}</span>
+          )}
         </div>
       )}
 
@@ -658,8 +678,8 @@ function OpenSubmissions({
         </div>
       ) : null}
 
-      {/* Judge button */}
-      {(deadlinePassed || allSubmitted) && (
+      {/* Judge button — hidden while auto-resolving */}
+      {(deadlinePassed || allSubmitted) && !autoResolving && (
         <div className="mt-4">
           <TxButton
             onClick={async () => { await judgeTitleMatch(matchIdNum, wallet!); }}

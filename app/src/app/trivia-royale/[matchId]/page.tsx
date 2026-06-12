@@ -22,6 +22,7 @@ import {
 } from "@/lib/genlayer";
 import type { TriviaMatch, TriviaQuestion } from "@/lib/genlayer";
 import { useActiveWallet } from "@/lib/useActiveWallet";
+import { useAutoResolve } from "@/lib/useAutoResolve";
 
 function useCountdown(deadlineUnix: number | null) {
   const [secsLeft, setSecsLeft] = useState<number | null>(null);
@@ -173,6 +174,12 @@ export default function TriviaMatchPage() {
   const deadline = match.answer_deadline && Number(match.answer_deadline) > 0
     ? Number(match.answer_deadline) : null;
   const answeredCount = Object.keys(match.round_answers).length;
+
+  const { resolving: autoResolving } = useAutoResolve({
+    deadlineUnix: deadline ?? 0,
+    isActive: state === TRIVIA_STATE_IN_PROGRESS,
+    resolveFn: async () => { await resolveTriviaRound(matchIdNum, wallet!); },
+  });
   const survivorCount = playerCount - match.eliminated.length;
   const accent = "var(--game-trivia)";
 
@@ -381,28 +388,46 @@ export default function TriviaMatchPage() {
             )}
 
             {deadline && Date.now() / 1000 > deadline && (
-              <div className="mt-6">
-                <TxButton
-                  onClick={async () => { await resolveTriviaRound(matchIdNum, wallet!); }}
-                  className="rounded-lg px-5 py-2 text-sm font-semibold hover:opacity-90 bg-[var(--warning)] text-[#0a0a0f]"
-                  pendingLabel="Resolving round…"
-                  description="Resolving Trivia round"
-                >
-                  Resolve Round
-                </TxButton>
+              <div className="mt-6 flex items-center gap-4 flex-wrap">
+                {autoResolving ? (
+                  <span
+                    className="text-sm font-mono font-semibold animate-resolve-pulse"
+                    style={{ color: accent }}
+                  >
+                    Resolving…
+                  </span>
+                ) : (
+                  <TxButton
+                    onClick={async () => { await resolveTriviaRound(matchIdNum, wallet!); }}
+                    className="rounded-lg px-5 py-2 text-sm font-semibold hover:opacity-90 bg-[var(--warning)] text-[#0a0a0f]"
+                    pendingLabel="Resolving round…"
+                    description="Resolving Trivia round"
+                  >
+                    Resolve Round
+                  </TxButton>
+                )}
               </div>
             )}
 
             {answeredCount >= survivorCount && survivorCount > 0 && !(deadline && Date.now() / 1000 > deadline) && (
-              <div className="mt-4">
-                <TxButton
-                  onClick={async () => { await resolveTriviaRound(matchIdNum, wallet!); }}
-                  className="rounded-lg px-5 py-2 text-sm font-semibold hover:opacity-90 text-white bg-[var(--success)]"
-                  pendingLabel="Resolving round…"
-                  description="Resolving Trivia round"
-                >
-                  All answered — Resolve Round
-                </TxButton>
+              <div className="mt-4 flex items-center gap-4 flex-wrap">
+                {autoResolving ? (
+                  <span
+                    className="text-sm font-mono font-semibold animate-resolve-pulse"
+                    style={{ color: accent }}
+                  >
+                    Resolving…
+                  </span>
+                ) : (
+                  <TxButton
+                    onClick={async () => { await resolveTriviaRound(matchIdNum, wallet!); }}
+                    className="rounded-lg px-5 py-2 text-sm font-semibold hover:opacity-90 text-white bg-[var(--success)]"
+                    pendingLabel="Resolving round…"
+                    description="Resolving Trivia round"
+                  >
+                    All answered — Resolve Round
+                  </TxButton>
+                )}
               </div>
             )}
           </main>

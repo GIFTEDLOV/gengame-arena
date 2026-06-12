@@ -22,6 +22,7 @@ import {
 } from "@/lib/genlayer";
 import type { Match } from "@/lib/genlayer";
 import { useActiveWallet } from "@/lib/useActiveWallet";
+import { useAutoResolve } from "@/lib/useAutoResolve";
 
 const ZERO_ADDR = "0x" + "0".repeat(40);
 const MAX_PROMPT = 500;
@@ -147,6 +148,12 @@ export default function MatchPage() {
   const deadlineUnix = deadlineSet && state === STATE_FULL ? Number(match!.submission_deadline) : null;
   const countdown = useCountdown(deadlineUnix);
   const deadlinePassed = deadlineSet ? Date.now() / 1000 > Number(match!.submission_deadline) : false;
+
+  const { resolving: autoResolving } = useAutoResolve({
+    deadlineUnix: deadlineSet ? Number(match!.submission_deadline) : 0,
+    isActive: state === STATE_FULL,
+    resolveFn: async () => { await judgeMatch(matchIdNum, wallet!); },
+  });
   const canCancel = match ? Date.now() / 1000 > Number(match.created_at) + 300 : false;
 
   const playerIdx = match ? match.players.findIndex((p) => p.toLowerCase() === currentAddr) : -1;
@@ -244,12 +251,25 @@ export default function MatchPage() {
             </div>
           )}
 
-          {/* Countdown */}
-          {countdown.display && (
-            <div className="mb-4 flex items-center gap-4">
-              <span className="text-sm font-semibold font-mono" style={{ color: countdown.color }}>
-                {countdown.display}
-              </span>
+          {/* Countdown — 3 states: active, expired-awaiting, resolving */}
+          {state === STATE_FULL && (
+            <div className="mb-4 flex items-center gap-4 flex-wrap">
+              {autoResolving ? (
+                <span
+                  className="text-sm font-semibold font-mono animate-resolve-pulse"
+                  style={{ color: "var(--game-prompt-wars)" }}
+                >
+                  Resolving…
+                </span>
+              ) : countdown.expired ? (
+                <span className="text-sm font-mono" style={{ color: "var(--text-tertiary)" }}>
+                  Awaiting resolution
+                </span>
+              ) : countdown.display ? (
+                <span className="text-sm font-semibold font-mono" style={{ color: countdown.color }}>
+                  {countdown.display}
+                </span>
+              ) : null}
               <span className="text-xs font-mono" style={{ color: "var(--text-tertiary)" }}>
                 {submittedCount} / {totalPlayers} submitted
               </span>
@@ -405,14 +425,23 @@ export default function MatchPage() {
               )}
 
               {isPlayer && (allSubmitted || deadlinePassed) && (
-                <TxButton
-                  onClick={() => judgeMatch(matchIdNum, wallet).then(() => { fetchMatch(); })}
-                  className="rounded-lg px-6 py-3 font-semibold hover:opacity-90 text-[#0a0a0f] bg-[var(--game-prompt-wars)]"
-                  pendingLabel="Judging… (this may take a minute)"
-                  description="Judging Prompt Wars match"
-                >
-                  {allSubmitted ? "Judge Now" : "Finalize & Judge"}
-                </TxButton>
+                autoResolving ? (
+                  <span
+                    className="text-sm font-mono font-semibold animate-resolve-pulse"
+                    style={{ color: "var(--game-prompt-wars)" }}
+                  >
+                    Resolving…
+                  </span>
+                ) : (
+                  <TxButton
+                    onClick={() => judgeMatch(matchIdNum, wallet).then(() => { fetchMatch(); })}
+                    className="rounded-lg px-6 py-3 font-semibold hover:opacity-90 text-[#0a0a0f] bg-[var(--game-prompt-wars)]"
+                    pendingLabel="Judging… (this may take a minute)"
+                    description="Judging Prompt Wars match"
+                  >
+                    {allSubmitted ? "Judge Now" : "Finalize & Judge"}
+                  </TxButton>
+                )
               )}
             </div>
           )}

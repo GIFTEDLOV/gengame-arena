@@ -21,6 +21,7 @@ import {
 } from "@/lib/genlayer";
 import type { Market } from "@/lib/genlayer";
 import { useActiveWallet } from "@/lib/useActiveWallet";
+import { useAutoResolve } from "@/lib/useAutoResolve";
 
 function useCountdown(resolutionTs: number | null): { display: string; expired: boolean; color: string } {
   const [secsLeft, setSecsLeft] = useState<number | null>(null);
@@ -110,6 +111,12 @@ export default function MarketPage() {
   const countdown = useCountdown(resolutionTs && !deadlinePassed ? resolutionTs : null);
   const accent = "var(--game-predictions)";
 
+  const { resolving: autoResolving } = useAutoResolve({
+    deadlineUnix: resolutionTs ?? 0,
+    isActive: state === PRED_STATE_OPEN,
+    resolveFn: async () => { await resolveMarket(marketIdNum, wallet!); },
+  });
+
   const playerIdx = market ? market.players.findIndex((p) => p.toLowerCase() === currentAddr) : -1;
   const isPlayer = playerIdx >= 0;
   const myPrediction = isPlayer ? market!.predictions[playerIdx] : null;
@@ -183,7 +190,14 @@ export default function MarketPage() {
                 Resolution
               </p>
               <p className="font-mono" style={{ color: "var(--text-primary)" }}>{resolutionDate}</p>
-              {!deadlinePassed && countdown.display && (
+              {autoResolving ? (
+                <p
+                  className="text-sm mt-1 font-mono font-bold animate-resolve-pulse"
+                  style={{ color: accent }}
+                >
+                  Resolving…
+                </p>
+              ) : !deadlinePassed && countdown.display ? (
                 <p
                   key={Math.floor(Date.now() / 1000)}
                   className="text-sm mt-1 font-mono font-bold animate-pred-tick"
@@ -191,10 +205,11 @@ export default function MarketPage() {
                 >
                   {countdown.display}
                 </p>
-              )}
-              {deadlinePassed && state === PRED_STATE_OPEN && (
-                <p className="text-amber-400 text-sm mt-1 font-mono">Past deadline — awaiting resolution</p>
-              )}
+              ) : deadlinePassed && state === PRED_STATE_OPEN ? (
+                <p className="text-sm mt-1 font-mono" style={{ color: "var(--text-tertiary)" }}>
+                  Awaiting resolution
+                </p>
+              ) : null}
             </div>
           )}
 
@@ -354,21 +369,32 @@ export default function MarketPage() {
                   className="rounded-xl border p-5"
                   style={{ borderColor: "rgba(251,191,36,0.3)", background: "rgba(251,191,36,0.04)" }}
                 >
-                  <p className="text-sm text-amber-400 mb-3 font-mono">
-                    Deadline passed — anyone can resolve this market now
-                  </p>
-                  <TxButton
-                    onClick={async () => {
-                      if (!wallet) throw new Error("No wallet");
-                      await resolveMarket(marketIdNum, wallet);
-                      fetchMarket();
-                    }}
-                    className="rounded-lg px-6 py-2 font-semibold hover:opacity-90 text-[#0a0a0f] bg-[var(--game-predictions)]"
-                    pendingLabel="Fetching real-world data via validators…"
-                    description="Resolving prediction market"
-                  >
-                    Resolve Market
-                  </TxButton>
+                  {autoResolving ? (
+                    <p
+                      className="text-sm font-mono font-semibold animate-resolve-pulse"
+                      style={{ color: accent }}
+                    >
+                      Resolving…
+                    </p>
+                  ) : (
+                    <>
+                      <p className="text-sm text-amber-400 mb-3 font-mono">
+                        Deadline passed — anyone can resolve this market now
+                      </p>
+                      <TxButton
+                        onClick={async () => {
+                          if (!wallet) throw new Error("No wallet");
+                          await resolveMarket(marketIdNum, wallet);
+                          fetchMarket();
+                        }}
+                        className="rounded-lg px-6 py-2 font-semibold hover:opacity-90 text-[#0a0a0f] bg-[var(--game-predictions)]"
+                        pendingLabel="Fetching real-world data via validators…"
+                        description="Resolving prediction market"
+                      >
+                        Resolve Market
+                      </TxButton>
+                    </>
+                  )}
                 </div>
               )}
 

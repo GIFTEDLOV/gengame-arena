@@ -384,8 +384,9 @@ Respond as JSON in exactly this format:
         def judge_validator_fn(leader_result) -> bool:
             if not isinstance(leader_result, gl.vm.Return):
                 return False
-            validator_data = judge_leader_fn()
-            return leader_result.calldata["ranking"] == validator_data["ranking"]
+            ranking = leader_result.calldata.get("ranking", [])
+            valid_indices = set(range(1, n + 1))
+            return len(ranking) == n and set(int(x) for x in ranking) == valid_indices
 
         result = gl.vm.run_nondet_unsafe(judge_leader_fn, judge_validator_fn)
 

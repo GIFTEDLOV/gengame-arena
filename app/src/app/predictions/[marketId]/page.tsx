@@ -184,7 +184,11 @@ export default function MarketPage() {
               </p>
               <p className="font-mono" style={{ color: "var(--text-primary)" }}>{resolutionDate}</p>
               {!deadlinePassed && countdown.display && (
-                <p className="text-sm mt-1 font-mono font-bold" style={{ color: countdown.color }}>
+                <p
+                  key={Math.floor(Date.now() / 1000)}
+                  className="text-sm mt-1 font-mono font-bold animate-pred-tick"
+                  style={{ color: countdown.color }}
+                >
                   {countdown.display}
                 </p>
               )}

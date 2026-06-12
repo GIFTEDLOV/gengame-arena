@@ -17,6 +17,9 @@ MAX_PLAYERS = 100
 MIN_HOURS   = 0    # no minimum for testing; enforce in UI layer
 MAX_HOURS   = 168  # 7 days
 
+ERROR_EXPECTED = "[EXPECTED]"   # business-logic errors — deterministic across validators
+ERROR_EXTERNAL = "[EXTERNAL]"   # network/AI failures — non-deterministic, may retry
+
 
 # ── JSON helpers ──────────────────────────────────────────────────────────────
 
@@ -115,44 +118,58 @@ class Predictions(gl.Contract):
     @gl.public.write
     def create_market(self, question: str, market_type: u8, resolution_datetime: u64) -> u64:
         if len(question) > 300:
-            raise gl.vm.UserError("Question exceeds 300 characters")
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Question exceeds 300 characters")
         if int(market_type) not in (0, 1):
-            raise gl.vm.UserError("Invalid market_type: must be 0 (binary) or 1 (numeric)")
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Invalid market_type: must be 0 (binary) or 1 (numeric)")
 
         now = int(datetime.datetime.now().timestamp())
         res_ts = int(resolution_datetime)
         min_ts = now + MIN_HOURS * 3600
         max_ts = now + MAX_HOURS * 3600
         if res_ts < min_ts:
-            raise gl.vm.UserError("Resolution datetime must be at least 24 hours from now")
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Resolution datetime must be at least 24 hours from now")
         if res_ts > max_ts:
-            raise gl.vm.UserError("Resolution datetime must be at most 7 days from now")
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Resolution datetime must be at most 7 days from now")
 
         market_id = self.next_market_id
         res_dt = datetime.datetime.fromtimestamp(res_ts, tz=datetime.timezone.utc)
+        market_type_label = "binary (YES/NO)" if int(market_type) == 0 else "numeric (specific value)"
 
-        verify_prompt = (
-            f'Is the following prediction market question answerable from public web sources '
-            f'at or after {res_dt.strftime("%Y-%m-%d %H:%M UTC")}?\n\n'
-            f'Question: "{question}"\n\n'
-            f'Answer YES or NO, then briefly explain. '
-            f'Reject only if the question CANNOT be answered from public web sources by the resolution datetime. '
-            f'Reject subjective opinions or questions requiring private data. '
-            f'When in doubt, accept.\n\n'
-            f'Start your response with YES or NO.'
-        )
+        verify_prompt = f"""You are verifying whether a prediction question can be answered later via public web sources.
 
-        def _run():
-            return gl.nondet.exec_prompt(verify_prompt, response_format='text')
-        verify_result = gl.eq_principle.prompt_comparative(
-            _run,
-            'Both outputs start with YES or both outputs start with NO',
-        )
+Question: {question}
+Resolution date: {res_dt.strftime("%Y-%m-%d %H:%M UTC")}
+Market type: {market_type_label}
 
-        answer_text = str(verify_result).strip().upper()
-        accepted = answer_text.startswith("YES")
+Criteria:
+- The question must have an objective answer by the resolution date
+- The answer must be publicly verifiable via standard web sources
+- For numeric markets, the answer must be a specific number with clear units
+- For binary markets, the answer must be a clear yes/no determination
+- Reject questions that depend on subjective judgment, private information, or unverifiable claims
+- When in doubt, accept
+
+Respond as JSON in exactly this format:
+{{
+    "verifiable": true or false,
+    "reasoning": "1-2 sentences explaining your decision"
+}}"""
+
+        def verify_leader_fn():
+            return gl.nondet.exec_prompt(verify_prompt, response_format='json')
+
+        def verify_validator_fn(leader_result) -> bool:
+            if not isinstance(leader_result, gl.vm.Return):
+                return False
+            validator_data = verify_leader_fn()
+            leader_data = leader_result.calldata
+            return leader_data["verifiable"] == validator_data["verifiable"]
+
+        verify_result = gl.vm.run_nondet_unsafe(verify_leader_fn, verify_validator_fn)
+
+        accepted = bool(verify_result["verifiable"])
         state = STATE_OPEN if accepted else STATE_REJECTED
-        rejection_reason = "" if accepted else str(verify_result).strip()
+        rejection_reason = "" if accepted else str(verify_result.get("reasoning", "Rejected by AI verifier"))
 
         self._save_market(market_id, Market(
             id=market_id,
@@ -181,17 +198,17 @@ class Predictions(gl.Contract):
     @gl.public.write
     def join_and_predict_binary(self, market_id: u64, prediction: bool) -> None:
         if str(int(market_id)) not in self.markets:
-            raise gl.vm.UserError("Market not found")
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Market not found")
         m = self.markets[str(int(market_id))]
 
         if int(m.state) != int(STATE_OPEN):
-            raise gl.vm.UserError("Market is not open")
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Market is not open")
         if int(m.market_type) != int(MARKET_TYPE_BINARY):
-            raise gl.vm.UserError("Market is not binary")
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Market is not binary")
 
         now = int(datetime.datetime.now().timestamp())
         if now >= int(m.resolution_datetime):
-            raise gl.vm.UserError("Prediction deadline has passed")
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Prediction deadline has passed")
 
         caller = gl.message.sender_address
         players = _json_to_addrs(m.players_json)
@@ -204,7 +221,7 @@ class Predictions(gl.Contract):
             sub_times[idx] = now
         else:
             if len(players) >= MAX_PLAYERS:
-                raise gl.vm.UserError("Market is full")
+                raise gl.vm.UserError(f"{ERROR_EXPECTED} Market is full")
             players.append(caller)
             predictions.append(prediction)
             sub_times.append(now)
@@ -223,19 +240,19 @@ class Predictions(gl.Contract):
     @gl.public.write
     def join_and_predict_numeric(self, market_id: u64, prediction: str) -> None:
         if str(int(market_id)) not in self.markets:
-            raise gl.vm.UserError("Market not found")
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Market not found")
         m = self.markets[str(int(market_id))]
 
         if int(m.state) != int(STATE_OPEN):
-            raise gl.vm.UserError("Market is not open")
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Market is not open")
         if int(m.market_type) != int(MARKET_TYPE_NUMERIC):
-            raise gl.vm.UserError("Market is not numeric")
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Market is not numeric")
 
         pred_float = float(prediction)
 
         now = int(datetime.datetime.now().timestamp())
         if now >= int(m.resolution_datetime):
-            raise gl.vm.UserError("Prediction deadline has passed")
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Prediction deadline has passed")
 
         caller = gl.message.sender_address
         players = _json_to_addrs(m.players_json)
@@ -248,7 +265,7 @@ class Predictions(gl.Contract):
             sub_times[idx] = now
         else:
             if len(players) >= MAX_PLAYERS:
-                raise gl.vm.UserError("Market is full")
+                raise gl.vm.UserError(f"{ERROR_EXPECTED} Market is full")
             players.append(caller)
             predictions.append(pred_float)
             sub_times.append(now)
@@ -267,54 +284,87 @@ class Predictions(gl.Contract):
     @gl.public.write
     def resolve_market(self, market_id: u64) -> None:
         if str(int(market_id)) not in self.markets:
-            raise gl.vm.UserError("Market not found")
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Market not found")
         m = self.markets[str(int(market_id))]
 
         if int(m.state) != int(STATE_OPEN):
-            raise gl.vm.UserError("Market is not open or already resolved")
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Market is not open or already resolved")
 
         now = int(datetime.datetime.now().timestamp())
         if now < int(m.resolution_datetime):
-            raise gl.vm.UserError("Resolution datetime has not arrived yet")
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Resolution datetime has not arrived yet")
 
-        is_binary  = int(m.market_type) == int(MARKET_TYPE_BINARY)
+        is_binary = int(m.market_type) == int(MARKET_TYPE_BINARY)
         res_dt = datetime.datetime.fromtimestamp(int(m.resolution_datetime), tz=datetime.timezone.utc)
-
-        if is_binary:
-            answer_fmt = 'Return JSON: {"answer": true or false, "source": "URL or source name", "reasoning": "brief explanation"}'
-            criteria_str = 'The "answer" field is identical (both true or both false)'
-        else:
-            answer_fmt = 'Return JSON: {"answer": <numeric value as a number, no commas or units>, "source": "URL or source name", "reasoning": "brief explanation"}'
-            criteria_str = 'Both outputs return a JSON object with a numeric "answer" field that is a positive number'
-
-        resolution_prompt = (
-            f'You are resolving a real-world prediction market. Use your web access to find the actual answer.\n\n'
-            f'Question: "{m.question}"\n'
-            f'Resolution time: {res_dt.strftime("%Y-%m-%d %H:%M UTC")}\n\n'
-            f'Find the answer from public web sources as of the resolution time. '
-            f'Search reputable sources (news sites, official APIs, financial data providers).\n\n'
-            f'{answer_fmt}\n\n'
-            f'Return only valid JSON, no markdown.'
-        )
-
-        def _run():
-            return gl.nondet.exec_prompt(resolution_prompt, response_format='json')
-        result = gl.eq_principle.prompt_comparative(
-            _run,
-            criteria_str,
-        )
-
-        if isinstance(result, str):
-            result = _json.loads(result)
-
-        raw_answer = result.get('answer')
-        source = str(result.get('source', ''))
-        reasoning = str(result.get('reasoning', ''))
 
         players = _json_to_addrs(m.players_json)
         predictions = _from_json(m.predictions_json)
         sub_times = _from_json(m.submission_times_json)
         n = len(players)
+
+        if is_binary:
+            binary_prompt = f"""You are resolving a real-world binary prediction market using your web access.
+
+Question: "{m.question}"
+Resolution time: {res_dt.strftime("%Y-%m-%d %H:%M UTC")}
+
+Find the answer from public web sources as of the resolution time.
+Search reputable sources (news sites, official data providers, verified APIs).
+
+Respond as JSON in exactly this format:
+{{
+    "answer": true or false,
+    "source": "URL or description of the source used",
+    "reasoning": "Brief explanation of how you determined the answer"
+}}"""
+
+            def binary_leader_fn():
+                return gl.nondet.exec_prompt(binary_prompt, response_format='json')
+
+            def binary_validator_fn(leader_result) -> bool:
+                if not isinstance(leader_result, gl.vm.Return):
+                    return False
+                validator_data = binary_leader_fn()
+                return leader_result.calldata["answer"] == validator_data["answer"]
+
+            result = gl.vm.run_nondet_unsafe(binary_leader_fn, binary_validator_fn)
+            raw_answer = result.get("answer")
+
+        else:
+            numeric_prompt = f"""You are resolving a real-world numeric prediction market using your web access.
+
+Question: "{m.question}"
+Resolution time: {res_dt.strftime("%Y-%m-%d %H:%M UTC")}
+
+Find the exact numeric answer from public web sources as of the resolution time.
+Search reputable sources (financial APIs, official data providers, verified databases).
+
+Respond as JSON in exactly this format:
+{{
+    "value": <numeric value as a number, no commas or units>,
+    "unit": "unit of measurement (e.g. USD, EUR, BTC, count)",
+    "source": "URL or description of the source used",
+    "reasoning": "Brief explanation of how you determined the value"
+}}"""
+
+            def numeric_leader_fn():
+                return gl.nondet.exec_prompt(numeric_prompt, response_format='json')
+
+            def numeric_validator_fn(leader_result) -> bool:
+                if not isinstance(leader_result, gl.vm.Return):
+                    return False
+                validator_data = numeric_leader_fn()
+                leader_val = float(leader_result.calldata["value"])
+                validator_val = float(validator_data["value"])
+                if leader_val == 0:
+                    return validator_val == 0
+                return abs(leader_val - validator_val) / abs(leader_val) <= 0.02
+
+            result = gl.vm.run_nondet_unsafe(numeric_leader_fn, numeric_validator_fn)
+            raw_answer = result.get("value")
+
+        source = str(result.get("source", ""))
+        reasoning = str(result.get("reasoning", ""))
 
         if is_binary:
             actual_bool = bool(raw_answer)
@@ -348,17 +398,17 @@ class Predictions(gl.Contract):
     @gl.public.write
     def cancel_market(self, market_id: u64) -> None:
         if str(int(market_id)) not in self.markets:
-            raise gl.vm.UserError("Market not found")
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Market not found")
         m = self.markets[str(int(market_id))]
 
         if m.creator != gl.message.sender_address:
-            raise gl.vm.UserError("Only the creator can cancel this market")
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Only the creator can cancel this market")
         if int(m.state) != int(STATE_OPEN):
-            raise gl.vm.UserError("Market is not open")
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Market is not open")
 
         players = _json_to_addrs(m.players_json)
         if len(players) > 0:
-            raise gl.vm.UserError("Cannot cancel a market that has players")
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Cannot cancel a market that has players")
 
         self._save_market(market_id, Market(
             id=m.id, creator=m.creator, question=m.question, market_type=m.market_type,

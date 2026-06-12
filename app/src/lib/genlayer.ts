@@ -19,7 +19,7 @@ export const PROMPT_WARS_ADDRESS =
 
 export const PREDICTIONS_ADDRESS =
   process.env.NEXT_PUBLIC_PREDICTIONS_ADDRESS ??
-  "0x41bAE6aF3D8Ced413A368253F3655b2E8DD3c6c0";
+  "0x36e9026fa5c3Fee76C273292F1c2251ddfDA478f";
 
 const RPC_URL =
   process.env.NEXT_PUBLIC_GENLAYER_RPC ?? "http://localhost:4000/api";

@@ -15,8 +15,8 @@ IN_7D   = NOW + 7 * 24 * 3600 - 1
 TOO_SOON = 1                # Unix epoch — definitively in the past (MIN_HOURS=0, only past timestamps rejected)
 TOO_FAR  = NOW + 8 * 24 * 3600  # 8 days — too far
 
-VERIFY_YES = "YES — the question can be answered from public web sources."
-VERIFY_NO  = "NO — this question cannot be answered from public web sources."
+VERIFY_YES = json.dumps({"verifiable": True,  "reasoning": "The question is answerable from public web sources."})
+VERIFY_NO  = json.dumps({"verifiable": False, "reasoning": "This question cannot be answered from public web sources."})
 
 RESOLVE_BINARY_TRUE = json.dumps({
     "answer": True,
@@ -31,13 +31,15 @@ RESOLVE_BINARY_FALSE = json.dumps({
 })
 
 RESOLVE_NUMERIC_45000 = json.dumps({
-    "answer": 45000,
+    "value": 45000,
+    "unit": "USD",
     "source": "https://api.coingecko.com/...",
     "reasoning": "BTC/USD was 45000 at the resolution time per CoinGecko.",
 })
 
 RESOLVE_NUMERIC_46000 = json.dumps({
-    "answer": 46000,
+    "value": 46000,
+    "unit": "USD",
     "source": "https://api.coingecko.com/...",
     "reasoning": "BTC/USD was 46000 at the resolution time per CoinGecko.",
 })
@@ -145,7 +147,7 @@ def test_create_market_stores_rejection_reason(contract, direct_vm):
     direct_vm.sender = ALICE_ADDR
     market_id = contract.create_market("Nonsense question?", 0, IN_48H)
     m = contract.get_market(market_id)
-    assert m.rejection_reason.strip().upper().startswith("NO")
+    assert len(m.rejection_reason) > 0
 
 
 def test_create_market_too_soon_rejected(contract, direct_vm):

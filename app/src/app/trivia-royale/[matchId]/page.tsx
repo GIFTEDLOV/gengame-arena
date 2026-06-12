@@ -120,6 +120,14 @@ export default function TriviaMatchPage() {
     return playerNames[addr.toLowerCase()] ?? addr.slice(0, 10) + "…";
   }
 
+  // Must be called unconditionally before any early return
+  const { resolving: autoResolving } = useAutoResolve({
+    deadlineUnix: match && match.answer_deadline && Number(match.answer_deadline) > 0
+      ? Number(match.answer_deadline) : 0,
+    isActive: match ? Number(match.state) === TRIVIA_STATE_IN_PROGRESS : false,
+    resolveFn: async () => { await resolveTriviaRound(matchIdNum, wallet!); },
+  });
+
   if (loading) {
     return (
       <AuthGuard>
@@ -156,12 +164,6 @@ export default function TriviaMatchPage() {
   const deadline = match.answer_deadline && Number(match.answer_deadline) > 0
     ? Number(match.answer_deadline) : null;
   const answeredCount = Object.keys(match.round_answers).length;
-
-  const { resolving: autoResolving } = useAutoResolve({
-    deadlineUnix: deadline ?? 0,
-    isActive: state === TRIVIA_STATE_IN_PROGRESS,
-    resolveFn: async () => { await resolveTriviaRound(matchIdNum, wallet!); },
-  });
   const survivorCount = playerCount - match.eliminated.length;
   const accent = "var(--game-trivia)";
 

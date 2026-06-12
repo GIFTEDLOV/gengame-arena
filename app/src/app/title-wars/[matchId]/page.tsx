@@ -159,6 +159,14 @@ export default function TitleMatchPage() {
     return playerNames[addr.toLowerCase()] ?? addr.slice(0, 10) + "…";
   }
 
+  // Must be called unconditionally before any early return
+  const { resolving: autoResolving } = useAutoResolve({
+    deadlineUnix: match && match.submission_deadline && Number(match.submission_deadline) > 0
+      ? Number(match.submission_deadline) : 0,
+    isActive: match ? Number(match.state) === TITLE_STATE_OPEN : false,
+    resolveFn: async () => { await judgeTitleMatch(matchIdNum, wallet!); },
+  });
+
   if (loading) {
     return (
       <AuthGuard>
@@ -188,12 +196,6 @@ export default function TitleMatchPage() {
   const deadline = match.submission_deadline && Number(match.submission_deadline) > 0
     ? Number(match.submission_deadline) : null;
   const submittedCount = match.titles.filter((t) => t !== "").length;
-
-  const { resolving: autoResolving } = useAutoResolve({
-    deadlineUnix: deadline ?? 0,
-    isActive: state === TITLE_STATE_OPEN,
-    resolveFn: async () => { await judgeTitleMatch(matchIdNum, wallet!); },
-  });
   const myIndex = currentAddr
     ? match.players.findIndex((p) => p.toLowerCase() === currentAddr)
     : -1;

@@ -144,6 +144,55 @@ body {
 .animate-tw-title-reveal  { animation: tw-title-reveal var(--duration-normal) var(--ease-out) both; }
 .animate-tw-flicker       { animation: tw-flicker 10s ease-in-out infinite; }
 
+/* ── Full-viewport game atmosphere layers ─────────────────── */
+
+/* Shared fixed layer helper */
+.atm-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Prompt Wars — slow diagonal tile drift (60s) */
+@keyframes atm-pw-drift {
+  0%   { transform: translate(0, 0); }
+  25%  { transform: translate(-10px, -14px); }
+  50%  { transform: translate(-18px, -6px); }
+  75%  { transform: translate(-6px, -20px); }
+  100% { transform: translate(0, 0); }
+}
+
+/* Predictions — sparkline draws left-to-right (25s) */
+@keyframes atm-pred-sparkline {
+  from { stroke-dashoffset: 1800; }
+  to   { stroke-dashoffset: 0; }
+}
+
+/* Trivia Royale — ring gentle scale pulse (8s) */
+@keyframes atm-trivia-ring-pulse {
+  0%, 100% { transform: scale(1); }
+  50%       { transform: scale(1.1); }
+}
+
+/* Title Wars — ambient glow slow sway (45s) */
+@keyframes atm-tw-ambient-sway {
+  0%, 100% { transform: translate(0, 0); }
+  50%       { transform: translate(20px, -20px); }
+}
+
+.animate-atm-pw-drift          { animation: atm-pw-drift 60s ease-in-out infinite; }
+.animate-atm-pred-sparkline    { animation: atm-pred-sparkline 25s linear infinite; }
+.animate-atm-trivia-ring-pulse { animation: atm-trivia-ring-pulse 8s ease-in-out infinite; }
+.animate-atm-tw-ambient-sway   { animation: atm-tw-ambient-sway 45s ease-in-out infinite; }
+
+/* Auto-resolve "Resolving..." chip pulse */
+@keyframes resolve-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.45; }
+}
+.animate-resolve-pulse { animation: resolve-pulse 1.8s ease-in-out infinite; }
+
 @media (prefers-reduced-motion: reduce) {
   .pw-shimmer-bar,
   .animate-pw-shimmer,
@@ -155,7 +204,12 @@ body {
   .animate-trivia-glow,
   .animate-tw-drop-cap,
   .animate-tw-title-reveal,
-  .animate-tw-flicker {
+  .animate-tw-flicker,
+  .animate-atm-pw-drift,
+  .animate-atm-pred-sparkline,
+  .animate-atm-trivia-ring-pulse,
+  .animate-atm-tw-ambient-sway,
+  .animate-resolve-pulse {
     animation: none !important;
     transition: none !important;
   }

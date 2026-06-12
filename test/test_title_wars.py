@@ -17,8 +17,8 @@ EXCERPT_OK  = (
 EXCERPT_BAD  = "buy milk, eggs, bread, and cheese"
 EXCERPT_SHORT = "hi"
 
-VERIFY_YES = "YES — this is a suitable literary excerpt for a title contest."
-VERIFY_NO  = "NO — this appears to be a grocery list, not a literary excerpt."
+VERIFY_YES = json.dumps({"acceptable": True, "reasoning": "This is a suitable literary excerpt for a title contest."})
+VERIFY_NO  = json.dumps({"acceptable": False, "reasoning": "This appears to be a grocery list, not a literary excerpt."})
 
 # Judge response for a 4-player match (ranking + reasoning)
 JUDGE_RESPONSE_4P = json.dumps({

@@ -648,7 +648,7 @@ export async function cancelMarketPredictions(
 
 export const TRIVIA_ROYALE_ADDRESS =
   process.env.NEXT_PUBLIC_TRIVIA_ROYALE_ADDRESS ??
-  "0x7Cc98D1A4e863b047296e6DD660Bf9b0eEcC7ed4";
+  "0x040C369BD876cA965576757e85DbE69316Bf96A8";
 
 export const TRIVIA_STATE_WAITING     = 0;
 export const TRIVIA_STATE_GENERATING  = 1;
@@ -894,7 +894,7 @@ export async function resolveTriviaRound(
 
 export const TITLE_WARS_ADDRESS =
   process.env.NEXT_PUBLIC_TITLE_WARS_ADDRESS ??
-  "0xA6D302438B57AE9372Fd494F8957771d326325Bc";
+  "0x09140b72B337d27dd3cD2a425884aB635cf6b910";
 
 export const TITLE_STATE_WAITING   = 0;  // lobby, accepting joins
 export const TITLE_STATE_REJECTED  = 1;  // excerpt failed verifiability

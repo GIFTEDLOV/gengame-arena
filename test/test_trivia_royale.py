@@ -11,8 +11,8 @@ DAVE_ADDR  = "0xdddddddddddddddddddddddddddddddddddddddd"
 TOPIC_OK  = "Football transfers"
 TOPIC_BAD = "My personal opinions about my neighbour's cat"
 
-VERIFY_YES = "YES — this topic has plenty of publicly verifiable trivia questions."
-VERIFY_NO  = "NO — this topic is too personal and subjective."
+VERIFY_YES = json.dumps({"acceptable": True,  "reasoning": "This topic has plenty of publicly verifiable trivia questions."})
+VERIFY_NO  = json.dumps({"acceptable": False, "reasoning": "This topic is too personal and subjective."})
 
 # A valid 15-question pool returned by the mock AI
 _MC_TEMPLATE = {

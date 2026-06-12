@@ -20,6 +20,9 @@ STATE_CANCELLED  = u8(5)   # cancelled or AI failed
 
 ZERO_ADDR_STR = "0x" + "0" * 40
 
+ERROR_EXPECTED = "[EXPECTED]"   # business-logic errors — deterministic across validators
+ERROR_EXTERNAL = "[EXTERNAL]"   # network/AI failures — non-deterministic, may retry
+
 
 def _addrs_to_json(addrs: list) -> str:
     return _json.dumps([str(a) for a in addrs])
@@ -105,31 +108,40 @@ class TriviaRoyale(gl.Contract):
     @gl.public.write
     def create_match(self, topic: str, max_players: u32 = u32(10)) -> u64:
         if len(topic) == 0 or len(topic) > MAX_TOPIC_LEN:
-            raise gl.vm.UserError(f"Topic must be 1-{MAX_TOPIC_LEN} characters")
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Topic must be 1-{MAX_TOPIC_LEN} characters")
         if int(max_players) < 2:
-            raise gl.vm.UserError("max_players must be at least 2")
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} max_players must be at least 2")
         if int(max_players) > MAX_PLAYERS_CAP:
-            raise gl.vm.UserError(f"max_players cannot exceed {MAX_PLAYERS_CAP}")
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} max_players cannot exceed {MAX_PLAYERS_CAP}")
 
         caller = gl.message.sender_address
         now = int(datetime.datetime.now().timestamp())
 
-        verify_prompt = (
-            f'Is the following topic suitable for generating {NUM_QUESTIONS}+ trivia questions '
-            f'with publicly verifiable factual answers?\n\n'
-            f'Topic: "{topic}"\n\n'
-            f'Reject if: the topic is too vague, too personal/private, entirely subjective, '
-            f'or has fewer than {NUM_QUESTIONS} publicly known facts.\n'
-            f'When in doubt, accept.\n\n'
-            f'Start your response with YES or NO, then one sentence of explanation.'
-        )
-        def _run():
-            return gl.nondet.exec_prompt(verify_prompt, response_format='text')
-        verify_result = gl.eq_principle.prompt_comparative(
-            _run,
-            'Both outputs start with YES or both outputs start with NO',
-        )
-        accepted = str(verify_result).strip().upper().startswith("YES")
+        verify_prompt = f"""Is the following topic suitable for generating {NUM_QUESTIONS}+ trivia questions with publicly verifiable factual answers?
+
+Topic: "{topic}"
+
+Criteria:
+- Reject if the topic is too vague, too personal/private, entirely subjective, or has fewer than {NUM_QUESTIONS} publicly known facts
+- When in doubt, accept
+
+Respond as JSON in exactly this format:
+{{
+    "acceptable": true or false,
+    "reasoning": "One sentence explaining your decision"
+}}"""
+
+        def verify_leader_fn():
+            return gl.nondet.exec_prompt(verify_prompt, response_format='json')
+
+        def verify_validator_fn(leader_result) -> bool:
+            if not isinstance(leader_result, gl.vm.Return):
+                return False
+            validator_data = verify_leader_fn()
+            return leader_result.calldata["acceptable"] == validator_data["acceptable"]
+
+        verify_result = gl.vm.run_nondet_unsafe(verify_leader_fn, verify_validator_fn)
+        accepted = bool(verify_result["acceptable"])
 
         match_id = self.next_match_id
         self.next_match_id = u64(int(match_id) + 1)
@@ -161,7 +173,7 @@ class TriviaRoyale(gl.Contract):
                 players_json=_addrs_to_json([caller]),
                 eliminated_json="[]",
                 state=STATE_CANCELLED,
-                rejection_reason=str(verify_result).strip(),
+                rejection_reason=str(verify_result.get("reasoning", "Topic rejected by AI")),
                 questions_json="[]",
                 current_round=u8(0),
                 round_answers_json="{}",
@@ -175,15 +187,15 @@ class TriviaRoyale(gl.Contract):
     def join_match(self, match_id: u64) -> None:
         caller = gl.message.sender_address
         if str(int(match_id)) not in self.matches:
-            raise gl.vm.UserError("Match not found")
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Match not found")
         m = self.matches[str(int(match_id))]
         if int(m.state) != int(STATE_WAITING):
-            raise gl.vm.UserError("Match is not open for joining")
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Match is not open for joining")
         players = _json_to_addrs(m.players_json)
         if len(players) >= int(m.max_players):
-            raise gl.vm.UserError("Match is full")
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Match is full")
         if self._index_of(players, caller) >= 0:
-            raise gl.vm.UserError("Already joined this match")
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Already joined this match")
         players.append(caller)
         self._save(match_id, TriviaMatch(
             id=m.id, host_str=m.host_str, topic=m.topic, max_players=m.max_players,
@@ -198,15 +210,15 @@ class TriviaRoyale(gl.Contract):
     def start_match(self, match_id: u64) -> None:
         caller = gl.message.sender_address
         if str(int(match_id)) not in self.matches:
-            raise gl.vm.UserError("Match not found")
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Match not found")
         m = self.matches[str(int(match_id))]
         if int(m.state) != int(STATE_WAITING):
-            raise gl.vm.UserError("Match already started or is finished")
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Match already started or is finished")
         if str(caller).lower() != m.host_str:
-            raise gl.vm.UserError("Only the host can start the match")
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Only the host can start the match")
         players = _json_to_addrs(m.players_json)
         if len(players) < 2:
-            raise gl.vm.UserError("Need at least 2 players to start")
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Need at least 2 players to start")
 
         now = int(datetime.datetime.now().timestamp())
 
@@ -218,7 +230,7 @@ class TriviaRoyale(gl.Contract):
             f'- Questions 7-8: open-ended. Short factual answer (1-4 words). '
             f'  Give the canonical answer and up to 2 acceptable alternate phrasings.\n'
             f'- Start easy (widely known facts), get harder.\n\n'
-            f'Return strict JSON only — no markdown, no explanation:\n'
+            f'Respond as JSON in exactly this format:\n'
             f'{{"questions": [\n'
             f'  {{"type": "mc", "text": "...", "options": ["A) ...", "B) ...", "C) ...", "D) ..."], '
             f'"correct_answer": "A", "alternates": []}},\n'
@@ -226,38 +238,25 @@ class TriviaRoyale(gl.Contract):
             f'"correct_answer": "...", "alternates": ["...", "..."]}}\n'
             f']}}'
         )
-        def _run():
-            return gl.nondet.exec_prompt(gen_prompt, response_format='text')
-        result = gl.eq_principle.prompt_comparative(
-            _run,
-            f'Both JSON outputs contain a "questions" array with exactly {NUM_QUESTIONS} items, '
-            f'each with a non-empty "text" field and a "type" field',
-        )
-        if isinstance(result, str):
-            # Strip markdown code fences the model sometimes wraps JSON in
-            stripped = result.strip()
-            if stripped.startswith('```'):
-                lines = stripped.splitlines()
-                lines = [l for l in lines if not l.strip().startswith('```')]
-                stripped = '\n'.join(lines).strip()
-            try:
-                result = _json.loads(stripped)
-            except _json.JSONDecodeError:
-                # AI response was truncated — salvage complete questions from the partial JSON
-                last_close = stripped.rfind('},')
-                if last_close < 0:
-                    last_close = stripped.rfind('}')
-                if last_close > 0:
-                    try:
-                        result = _json.loads(stripped[:last_close + 1] + ']}')
-                    except _json.JSONDecodeError:
-                        result = {"questions": []}
-                else:
-                    result = {"questions": []}
+
+        def gen_leader_fn():
+            return gl.nondet.exec_prompt(gen_prompt, response_format='json')
+
+        def gen_validator_fn(leader_result) -> bool:
+            if not isinstance(leader_result, gl.vm.Return):
+                return False
+            qs = leader_result.calldata.get("questions", [])
+            if len(qs) < NUM_QUESTIONS:
+                return False
+            for q in qs:
+                if not q.get("type") or not q.get("text"):
+                    return False
+            return True
+
+        result = gl.vm.run_nondet_unsafe(gen_leader_fn, gen_validator_fn)
 
         questions = result.get('questions', [])
         if len(questions) < NUM_QUESTIONS:
-            # Pad with a fallback if AI returned fewer (shouldn't happen often)
             while len(questions) < NUM_QUESTIONS:
                 questions.append({
                     "type": "mc",
@@ -286,18 +285,18 @@ class TriviaRoyale(gl.Contract):
     def submit_answer(self, match_id: u64, answer: str) -> None:
         caller = gl.message.sender_address
         if str(int(match_id)) not in self.matches:
-            raise gl.vm.UserError("Match not found")
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Match not found")
         m = self.matches[str(int(match_id))]
         if int(m.state) != int(STATE_IN_PROGRESS):
-            raise gl.vm.UserError("Match is not in progress")
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Match is not in progress")
         players = _json_to_addrs(m.players_json)
         eliminated = _json_to_addrs(m.eliminated_json)
         active = self._active_players(players, eliminated)
         if self._index_of(active, caller) < 0:
-            raise gl.vm.UserError("You are not an active player in this match")
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} You are not an active player in this match")
         now = int(datetime.datetime.now().timestamp())
         if int(m.answer_deadline) > 0 and now > int(m.answer_deadline):
-            raise gl.vm.UserError("Answer deadline has passed")
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Answer deadline has passed")
         round_answers = _json.loads(m.round_answers_json) if m.round_answers_json else {}
         round_answers[str(caller).lower()] = str(answer)
         self._save(match_id, TriviaMatch(
@@ -313,10 +312,10 @@ class TriviaRoyale(gl.Contract):
     @gl.public.write
     def resolve_round(self, match_id: u64) -> None:
         if str(int(match_id)) not in self.matches:
-            raise gl.vm.UserError("Match not found")
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Match not found")
         m = self.matches[str(int(match_id))]
         if int(m.state) != int(STATE_IN_PROGRESS):
-            raise gl.vm.UserError("Match is not in progress")
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Match is not in progress")
 
         players = _json_to_addrs(m.players_json)
         eliminated = _json_to_addrs(m.eliminated_json)
@@ -328,12 +327,12 @@ class TriviaRoyale(gl.Contract):
         all_answered = all(str(p).lower() in round_answers for p in active)
 
         if not deadline_passed and not all_answered:
-            raise gl.vm.UserError("Waiting for all players to answer or deadline to pass")
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Waiting for all players to answer or deadline to pass")
 
         questions = _json.loads(m.questions_json)
         round_idx = int(m.current_round)
         if round_idx >= len(questions):
-            raise gl.vm.UserError("No more questions")
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} No more questions")
         q = questions[round_idx]
         q_type = q.get('type', 'mc')
         correct_answer = str(q.get('correct_answer', '')).strip()
@@ -356,6 +355,7 @@ class TriviaRoyale(gl.Contract):
             answers_block = "\n".join(
                 f"Player {i+1}: \"{player_answers[i]}\"" for i in range(len(active))
             )
+            oe_count = len(active)
             verify_prompt = (
                 f'Trivia question: "{q.get("text", "")}"\n'
                 f'Correct answer: "{correct_answer}"\n'
@@ -364,16 +364,21 @@ class TriviaRoyale(gl.Contract):
                 f'Be lenient: accept minor typos, common abbreviations, alternate valid phrasings.\n'
                 f'Reject: wrong entity, completely different meaning, empty string, or gibberish.\n\n'
                 f'{answers_block}\n\n'
-                f'Return JSON only, no markdown: {{"results": [true_or_false_per_player_in_order]}}'
+                f'Respond as JSON in exactly this format:\n'
+                f'{{"results": [true or false per player in order, exactly {oe_count} values],\n'
+                f' "explanations": ["why correct/incorrect for each player in order"]}}'
             )
-            def _run():
+
+            def oe_leader_fn():
                 return gl.nondet.exec_prompt(verify_prompt, response_format='json')
-            verify_result = gl.eq_principle.prompt_comparative(
-                _run,
-                'Both JSON outputs have a "results" array with identical boolean values in the same order',
-            )
-            if isinstance(verify_result, str):
-                verify_result = _json.loads(verify_result)
+
+            def oe_validator_fn(leader_result) -> bool:
+                if not isinstance(leader_result, gl.vm.Return):
+                    return False
+                validator_data = oe_leader_fn()
+                return leader_result.calldata.get("results") == validator_data.get("results")
+
+            verify_result = gl.vm.run_nondet_unsafe(oe_leader_fn, oe_validator_fn)
             correctness = verify_result.get('results', [False] * len(active))
             for i, p in enumerate(active):
                 is_correct = bool(correctness[i]) if i < len(correctness) else False
@@ -388,7 +393,6 @@ class TriviaRoyale(gl.Contract):
         new_deadline = int(datetime.datetime.now().timestamp()) + ROUND_SECONDS
 
         if len(survivors) == 1:
-            # One winner
             winner = survivors[0]
             self._save(match_id, TriviaMatch(
                 id=m.id, host_str=m.host_str, topic=m.topic, max_players=m.max_players,
@@ -411,7 +415,6 @@ class TriviaRoyale(gl.Contract):
         elif len(survivors) == 0:
             # All wrong — no one eliminated this round; advance without eliminating
             if new_round >= len(questions):
-                # Out of questions, pick the last surviving player by join order
                 last_survivor = players[0] if players else None
                 for p in players:
                     if self._index_of(list(eliminated), p) < 0:
@@ -444,9 +447,7 @@ class TriviaRoyale(gl.Contract):
         else:
             # 2+ survivors — advance to next round
             if new_round >= len(questions):
-                # Out of questions
                 if len(questions) >= 40:
-                    # Hard cap: 40 questions exhausted — declare shared win for all survivors
                     winner = survivors[0]
                     survivor_strs = set(str(s).lower() for s in survivors)
                     self._save(match_id, TriviaMatch(
@@ -467,7 +468,6 @@ class TriviaRoyale(gl.Contract):
                                for p in players]
                     registry.emit().record_match_batch(entries)
                 else:
-                    # Generate another batch of questions so the match can continue
                     self._generate_more_questions(match_id, m, elim_list, new_round)
             else:
                 self._save(match_id, TriviaMatch(
@@ -482,7 +482,7 @@ class TriviaRoyale(gl.Contract):
                 ))
 
     def _generate_more_questions(self, match_id: u64, m, elim_list: list, new_round: int, batch_size: int = 8) -> None:
-        """Generate an additional batch of questions when the pool is exhausted mid-match."""
+        """Generate additional trivia questions when the pool is exhausted mid-match."""
         questions = _json.loads(m.questions_json)
         existing_texts = [q.get('text', '') for q in questions]
         avoid_block = "\n".join(f"- {t}" for t in existing_texts)
@@ -496,38 +496,28 @@ class TriviaRoyale(gl.Contract):
             f'  One correct answer (give just the letter: A, B, C, or D).\n'
             f'- Open-ended: Short factual answer (1-4 words). '
             f'  Give the canonical answer and up to 2 acceptable alternate phrasings.\n\n'
-            f'Return strict JSON only — no markdown, no explanation:\n'
+            f'Respond as JSON in exactly this format:\n'
             f'{{"questions": [\n'
             f'  {{"type": "mc", "text": "...", "options": ["A) ...", "B) ...", "C) ...", "D) ..."], '
             f'"correct_answer": "A", "alternates": []}}\n'
             f']}}'
         )
-        def _run():
-            return gl.nondet.exec_prompt(gen_prompt, response_format='text')
-        result = gl.eq_principle.prompt_comparative(
-            _run,
-            f'Both JSON outputs contain a "questions" array with exactly {batch_size} items, '
-            f'each with a non-empty "text" field and a "type" field',
-        )
-        if isinstance(result, str):
-            stripped = result.strip()
-            if stripped.startswith('```'):
-                lines = stripped.splitlines()
-                lines = [l for l in lines if not l.strip().startswith('```')]
-                stripped = '\n'.join(lines).strip()
-            try:
-                result = _json.loads(stripped)
-            except _json.JSONDecodeError:
-                last_close = stripped.rfind('},')
-                if last_close < 0:
-                    last_close = stripped.rfind('}')
-                if last_close > 0:
-                    try:
-                        result = _json.loads(stripped[:last_close + 1] + ']}')
-                    except _json.JSONDecodeError:
-                        result = {"questions": []}
-                else:
-                    result = {"questions": []}
+
+        def more_leader_fn():
+            return gl.nondet.exec_prompt(gen_prompt, response_format='json')
+
+        def more_validator_fn(leader_result) -> bool:
+            if not isinstance(leader_result, gl.vm.Return):
+                return False
+            qs = leader_result.calldata.get("questions", [])
+            if len(qs) < batch_size:
+                return False
+            for q in qs:
+                if not q.get("type") or not q.get("text"):
+                    return False
+            return True
+
+        result = gl.vm.run_nondet_unsafe(more_leader_fn, more_validator_fn)
 
         new_qs = result.get('questions', [])
         while len(new_qs) < batch_size:
@@ -559,12 +549,12 @@ class TriviaRoyale(gl.Contract):
     def cancel_match(self, match_id: u64) -> None:
         caller = gl.message.sender_address
         if str(int(match_id)) not in self.matches:
-            raise gl.vm.UserError("Match not found")
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Match not found")
         m = self.matches[str(int(match_id))]
         if int(m.state) != int(STATE_WAITING):
-            raise gl.vm.UserError("Can only cancel a match that is waiting for players")
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Can only cancel a match that is waiting for players")
         if str(caller).lower() != m.host_str:
-            raise gl.vm.UserError("Only the host can cancel")
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Only the host can cancel")
         self._save(match_id, TriviaMatch(
             id=m.id, host_str=m.host_str, topic=m.topic, max_players=m.max_players,
             players_json=m.players_json, eliminated_json=m.eliminated_json,

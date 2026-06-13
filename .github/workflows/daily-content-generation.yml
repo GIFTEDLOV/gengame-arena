@@ -1,0 +1,41 @@
+name: Daily AI Content Generation
+
+on:
+  # Schedule is intentionally disabled — secrets not configured until Phase 6 (Bradbury deployment)
+  # schedule:
+  #   - cron: '0 13 * * *'  # 1pm UTC daily
+  workflow_dispatch:  # Allow manual trigger for testing
+
+jobs:
+  generate-daily-content:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: |
+          cd app
+          npm ci
+
+      - name: Generate daily content on all 4 contracts
+        env:
+          GENLAYER_RPC_URL: ${{ secrets.GENLAYER_RPC_URL }}
+          CRON_SIGNER_PRIVATE_KEY: ${{ secrets.CRON_SIGNER_PRIVATE_KEY }}
+          PROMPT_WARS_ADDRESS: ${{ secrets.PROMPT_WARS_ADDRESS }}
+          PREDICTIONS_ADDRESS: ${{ secrets.PREDICTIONS_ADDRESS }}
+          TRIVIA_ROYALE_ADDRESS: ${{ secrets.TRIVIA_ROYALE_ADDRESS }}
+          TITLE_WARS_ADDRESS: ${{ secrets.TITLE_WARS_ADDRESS }}
+        run: |
+          cd app
+          npx tsx scripts/cron-generate-daily.ts
+
+      - name: Notify on failure
+        if: failure()
+        run: echo "Daily generation failed — check logs. Frontend fallback will trigger when next user visits."

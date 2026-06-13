@@ -5,16 +5,35 @@ import { useRouter } from "next/navigation";
 import { registerUser, getUserProfile } from "@/lib/genlayer";
 import { useActiveWallet } from "@/lib/useActiveWallet";
 
+async function pollForProfile(
+  address: string,
+  maxAttempts = 15,
+  intervalMs = 2000
+): Promise<{ username: string } | null> {
+  for (let i = 0; i < maxAttempts; i++) {
+    try {
+      const profile = await getUserProfile(address);
+      if (profile && profile.username) return { username: String(profile.username) };
+    } catch {
+      // Profile not yet readable — keep polling
+    }
+    await new Promise<void>((r) => setTimeout(r, intervalMs));
+  }
+  return null;
+}
+
 export default function UsernamePage() {
   const router = useRouter();
   const { wallet, ready } = useActiveWallet();
   const [username, setUsername] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [statusMessage, setStatusMessage] = useState("");
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+    setStatusMessage("");
 
     if (username.length < 3 || username.length > 20) {
       setError("Username must be between 3 and 20 characters.");
@@ -33,19 +52,19 @@ export default function UsernamePage() {
     setLoading(true);
     try {
       await registerUser(username, wallet);
-      // Confirm on-chain profile is visible before redirecting — prevents silent
-      // loop back to this page if the read races the write.
-      const profile = await getUserProfile(wallet.address);
-      if (!profile) {
-        setError("Registration succeeded but profile isn't readable yet. Please wait a moment and try again.");
-        return;
+      setStatusMessage("Setting up your profile…");
+      const profile = await pollForProfile(wallet.address);
+      if (profile) {
+        router.push("/dashboard");
+      } else {
+        setError("Registration succeeded but profile is taking longer than expected. Please refresh the page in a moment.");
       }
-      router.push("/dashboard");
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       setError(msg.includes("taken") ? "Username already taken." : `Registration failed: ${msg}`);
     } finally {
       setLoading(false);
+      setStatusMessage("");
     }
   }
 
@@ -61,15 +80,26 @@ export default function UsernamePage() {
           onChange={(e) => setUsername(e.target.value)}
           placeholder="e.g. prompt_wizard"
           maxLength={20}
-          className="rounded-lg border border-gray-600 bg-gray-900 px-4 py-3 text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+          disabled={loading}
+          className="rounded-lg border border-gray-600 bg-gray-900 px-4 py-3 text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none disabled:opacity-60"
         />
         {error && <p className="text-sm text-red-400">{error}</p>}
+        {statusMessage && (
+          <p className="text-sm text-indigo-300 flex items-center gap-2">
+            <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
+            {statusMessage}
+          </p>
+        )}
         <button
           type="submit"
           disabled={loading || username.length < 3 || !ready}
           className="rounded-lg bg-indigo-600 py-3 font-semibold hover:bg-indigo-500 disabled:opacity-50"
         >
-          {loading ? "Registering on-chain… this can take a few seconds" : "Continue"}
+          {loading
+            ? statusMessage
+              ? "Waiting for profile…"
+              : "Registering on-chain… this can take a few seconds"
+            : "Continue"}
         </button>
       </form>
     </main>

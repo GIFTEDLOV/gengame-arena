@@ -21,6 +21,7 @@ import {
 } from "@/lib/genlayer";
 import type { Market } from "@/lib/genlayer";
 import { useActiveWallet } from "@/lib/useActiveWallet";
+import { getDailyMatchIds } from "@/lib/dailyContentTrigger";
 
 const MIN_RESOLUTION_HOURS = 24;
 const MAX_RESOLUTION_HOURS = 168;
@@ -165,6 +166,7 @@ export default function PredictionsPage() {
   const [myMarkets, setMyMarkets] = useState<Market[]>([]);
   const [winnerNames, setWinnerNames] = useState<Record<string, string>>({});
   const [lastCreatedState, setLastCreatedState] = useState<null | { rejected: boolean; reason: string; marketId: number }>(null);
+  const [dailyMarkets, setDailyMarkets] = useState<Market[] | null>(null);
 
   const fetchMarkets = useCallback(async () => {
     const [openIds, resolvedIds] = await Promise.all([
@@ -207,6 +209,11 @@ export default function PredictionsPage() {
   useEffect(() => {
     fetchMarkets();
     const id = setInterval(fetchMarkets, 5000);
+    getDailyMatchIds("predictions").then(async (ids) => {
+      if (ids.length === 0) { setDailyMarkets([]); return; }
+      const results = await Promise.all(ids.map((id) => getMarket(Number(id))));
+      setDailyMarkets(results.filter((m): m is Market => m !== null));
+    }).catch(() => setDailyMarkets([]));
     return () => clearInterval(id);
   }, [fetchMarkets]);
 
@@ -336,6 +343,43 @@ export default function PredictionsPage() {
                 </TxButton>
               </div>
             </section>
+
+            {/* Today's Official Markets */}
+            {dailyMarkets === null ? (
+              <section className="mb-10">
+                <div className="mb-4 flex items-center gap-2">
+                  <span style={{ color: accent, fontSize: "1rem" }}>&#9733;</span>
+                  <h2 className="text-lg font-semibold" style={{ color: "var(--text-primary)" }}>Today&apos;s Official Markets</h2>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {[...Array(5)].map((_, i) => (
+                    <div key={i} className="h-24 rounded-xl animate-pulse" style={{ background: "var(--bg-elevated)" }} />
+                  ))}
+                </div>
+              </section>
+            ) : dailyMarkets.length > 0 ? (
+              <section className="mb-10">
+                <div className="mb-1 flex items-center gap-2">
+                  <span style={{ color: accent, fontSize: "1rem" }}>&#9733;</span>
+                  <h2 className="text-lg font-semibold" style={{ color: "var(--text-primary)" }}>Today&apos;s Official Markets</h2>
+                  <span className="rounded-full px-2 py-0.5 text-xs font-mono" style={{ background: `color-mix(in srgb, ${accent} 15%, transparent)`, color: accent }}>{dailyMarkets.length}/5</span>
+                </div>
+                <p className="mb-4 text-xs" style={{ color: "var(--text-tertiary)", fontFamily: "var(--font-mono)" }}>
+                  Generated daily by GenLayer validators · Refreshes 1pm UTC
+                </p>
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {dailyMarkets.map((m) => (
+                    <div key={Number(m.id)} className="relative">
+                      <div className="absolute top-0 left-0 right-0 h-[3px] rounded-t-xl z-10" style={{ backgroundColor: accent }} />
+                      <div className="absolute top-1.5 right-2 z-10">
+                        <span className="rounded-full px-1.5 py-0.5 text-[10px] font-semibold" style={{ background: `color-mix(in srgb, ${accent} 20%, transparent)`, color: accent, fontFamily: "var(--font-mono)" }}>Daily</span>
+                      </div>
+                      <MarketCard market={m} />
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ) : null}
 
             {openMarkets.length > 0 && (
               <section className="mb-8">

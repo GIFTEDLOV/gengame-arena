@@ -15,6 +15,10 @@ import {
   STATE_WAITING,
 } from "@/lib/genlayer";
 import { useActiveWallet } from "@/lib/useActiveWallet";
+import {
+  getLastDailyGeneration,
+  triggerAllDailyContent,
+} from "@/lib/dailyContentTrigger";
 
 const privyAppId = process.env.NEXT_PUBLIC_PRIVY_APP_ID;
 const hasPrivy = !!privyAppId && privyAppId !== "your_privy_app_id_here";
@@ -308,7 +312,22 @@ function DashboardContentBody({ privyReady, authenticated, user }: PrivySnapshot
       const open = ms.filter((m) => Number(m.state) === STATE_WAITING).length;
       setCounts((c) => ({ ...c, "prompt-wars": open }));
     }).catch(() => {});
-  }, []);
+
+    // Opportunistic daily-content trigger: read last generation timestamps then fire if needed
+    Promise.all([
+      getLastDailyGeneration("prompt-wars"),
+      getLastDailyGeneration("predictions"),
+      getLastDailyGeneration("trivia-royale"),
+      getLastDailyGeneration("title-wars"),
+    ]).then(([pw, pred, trivia, tw]) => {
+      triggerAllDailyContent(wallet, {
+        "prompt-wars":  pw,
+        "predictions":  pred,
+        "trivia-royale": trivia,
+        "title-wars":   tw,
+      }).catch(() => {});
+    }).catch(() => {});
+  }, [wallet]);
 
   useEffect(() => {
     if (!walletReady || authenticated) return;

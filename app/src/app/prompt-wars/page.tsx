@@ -18,6 +18,7 @@ import {
 } from "@/lib/genlayer";
 import type { Match } from "@/lib/genlayer";
 import { useActiveWallet } from "@/lib/useActiveWallet";
+import { getDailyMatchIds } from "@/lib/dailyContentTrigger";
 
 const ZERO_ADDR = "0x" + "0".repeat(40);
 
@@ -143,11 +144,17 @@ export default function PromptWarsPage() {
   const [recentMatches, setRecentMatches] = useState<Match[]>([]);
   const [myMatches, setMyMatches] = useState<Match[]>([]);
   const [loadingMatches, setLoadingMatches] = useState(true);
+  const [dailyMatches, setDailyMatches] = useState<Match[] | null>(null);
 
   useEffect(() => {
     getRecentMatches(20)
       .then(setRecentMatches)
       .finally(() => setLoadingMatches(false));
+    getDailyMatchIds("prompt-wars").then(async (ids) => {
+      if (ids.length === 0) { setDailyMatches([]); return; }
+      const results = await Promise.all(ids.map((id) => getMatch(Number(id))));
+      setDailyMatches(results.filter((m): m is Match => m !== null));
+    }).catch(() => setDailyMatches([]));
   }, []);
 
   useEffect(() => {
@@ -263,6 +270,43 @@ export default function PromptWarsPage() {
                 </form>
               </div>
             </div>
+
+            {/* Today's Official Matches */}
+            {dailyMatches === null ? (
+              <section className="mb-10">
+                <div className="mb-4 flex items-center gap-2">
+                  <span style={{ color: accent, fontSize: "1rem" }}>&#9733;</span>
+                  <h2 className="text-lg font-semibold" style={{ color: "var(--text-primary)" }}>Today&apos;s Official Matches</h2>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-5 gap-2">
+                  {[...Array(5)].map((_, i) => (
+                    <div key={i} className="h-16 rounded-xl animate-pulse" style={{ background: "var(--bg-elevated)" }} />
+                  ))}
+                </div>
+              </section>
+            ) : dailyMatches.length > 0 ? (
+              <section className="mb-10">
+                <div className="mb-1 flex items-center gap-2">
+                  <span style={{ color: accent, fontSize: "1rem" }}>&#9733;</span>
+                  <h2 className="text-lg font-semibold" style={{ color: "var(--text-primary)" }}>Today&apos;s Official Matches</h2>
+                  <span className="rounded-full px-2 py-0.5 text-xs font-mono" style={{ background: `color-mix(in srgb, ${accent} 15%, transparent)`, color: accent }}>{dailyMatches.length}/5</span>
+                </div>
+                <p className="mb-4 text-xs" style={{ color: "var(--text-tertiary)", fontFamily: "var(--font-mono)" }}>
+                  Generated daily by GenLayer validators · Refreshes 1pm UTC
+                </p>
+                <div className="space-y-2">
+                  {dailyMatches.map((m) => (
+                    <div key={String(m.id)} className="relative">
+                      <div className="absolute top-0 left-0 right-0 h-[3px] rounded-t-xl" style={{ backgroundColor: accent }} />
+                      <div className="absolute top-1.5 right-2 z-10">
+                        <span className="rounded-full px-1.5 py-0.5 text-[10px] font-semibold" style={{ background: `color-mix(in srgb, ${accent} 20%, transparent)`, color: accent, fontFamily: "var(--font-mono)" }}>Daily</span>
+                      </div>
+                      <MatchRow m={m} />
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ) : null}
 
             {myMatches.length > 0 && (
               <section className="mb-10">

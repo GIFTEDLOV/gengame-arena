@@ -15,11 +15,11 @@ export const USER_REGISTRY_ADDRESS =
 
 export const PROMPT_WARS_ADDRESS =
   process.env.NEXT_PUBLIC_PROMPT_WARS_ADDRESS ??
-  "0x70cD2707531d05AA384008c34B566C207D56b096";
+  "0xd7ac318BB3d13E31C1b5CeDAbEe9316830a9b414";
 
 export const PREDICTIONS_ADDRESS =
   process.env.NEXT_PUBLIC_PREDICTIONS_ADDRESS ??
-  "0x36e9026fa5c3Fee76C273292F1c2251ddfDA478f";
+  "0x5bDAEC69F92d419417443485ECAd92A0d1F24B50";
 
 const RPC_URL =
   process.env.NEXT_PUBLIC_GENLAYER_RPC ?? "http://localhost:4000/api";
@@ -648,7 +648,7 @@ export async function cancelMarketPredictions(
 
 export const TRIVIA_ROYALE_ADDRESS =
   process.env.NEXT_PUBLIC_TRIVIA_ROYALE_ADDRESS ??
-  "0x040C369BD876cA965576757e85DbE69316Bf96A8";
+  "0x4F91ca3B8d62eFec3Fb6213fAd387fe6aAEB062d";
 
 export const TRIVIA_STATE_WAITING     = 0;
 export const TRIVIA_STATE_GENERATING  = 1;
@@ -894,7 +894,7 @@ export async function resolveTriviaRound(
 
 export const TITLE_WARS_ADDRESS =
   process.env.NEXT_PUBLIC_TITLE_WARS_ADDRESS ??
-  "0x09140b72B337d27dd3cD2a425884aB635cf6b910";
+  "0x0ff3657501bd24014cB04924A6e53E17fD3aDa5a";
 
 export const TITLE_STATE_WAITING   = 0;  // lobby, accepting joins
 export const TITLE_STATE_REJECTED  = 1;  // excerpt failed verifiability

@@ -53,7 +53,7 @@ function SectionHeader({ title, count, accent }: { title: string; count: number;
   );
 }
 
-function MatchCard({ match, hostName }: { match: TitleMatch; hostName?: string }) {
+function MatchCard({ match, hostName, isDaily }: { match: TitleMatch; hostName?: string; isDaily?: boolean }) {
   const excerptPreview = match.excerpt.length > 160 ? match.excerpt.slice(0, 160) + "…" : match.excerpt;
   const firstLine = match.excerpt.split("\n")[0];
   const previewText = firstLine.length > 100 ? firstLine.slice(0, 100) + "…" : firstLine;
@@ -84,12 +84,24 @@ function MatchCard({ match, hostName }: { match: TitleMatch; hostName?: string }
           {playerCount} / {maxPlayers} players
           {isFull && <span className="ml-1 text-amber-400">(full)</span>}
         </span>
-        <span>by {hostName ?? match.host_str.slice(0, 10) + "…"}</span>
+        <div className="flex items-center gap-2">
+          {isDaily && (
+            <span
+              className="rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
+              style={{ background: `color-mix(in srgb, ${accent} 20%, transparent)`, color: accent }}
+            >
+              Daily
+            </span>
+          )}
+          <span>by {hostName ?? match.host_str.slice(0, 10) + "…"}</span>
+        </div>
       </div>
       <Link
         href={`/title-wars/${Number(match.id)}`}
-        className="block text-center rounded-lg px-3 py-1.5 text-xs font-semibold hover:opacity-90 transition-opacity text-[#0a0a0f]"
-        style={{ background: accent }}
+        className={`block text-center rounded-lg px-3 py-1.5 text-xs font-semibold hover:opacity-90 transition-opacity ${isDaily ? "border" : "text-[#0a0a0f]"}`}
+        style={isDaily
+          ? { borderColor: `color-mix(in srgb, ${accent} 50%, transparent)`, color: accent }
+          : { background: accent }}
       >
         {isFull ? "View lobby" : "Join match"}
       </Link>
@@ -287,10 +299,7 @@ export default function TitleWarsPage() {
                   {dailyMatches.map((m) => (
                     <div key={Number(m.id)} className="relative">
                       <div className="absolute top-0 left-0 right-0 h-[3px] rounded-t-xl z-10" style={{ backgroundColor: accent }} />
-                      <div className="absolute top-1.5 right-2 z-10">
-                        <span className="rounded-full px-1.5 py-0.5 text-[10px] font-semibold" style={{ background: `color-mix(in srgb, ${accent} 20%, transparent)`, color: accent, fontFamily: "var(--font-mono)" }}>Daily</span>
-                      </div>
-                      <MatchCard match={m} hostName={hostNames[m.host_str?.toLowerCase?.() ?? ""]} />
+                      <MatchCard match={m} hostName={hostNames[m.host_str?.toLowerCase?.() ?? ""]} isDaily />
                     </div>
                   ))}
                 </div>

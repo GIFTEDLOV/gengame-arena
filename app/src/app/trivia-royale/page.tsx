@@ -58,7 +58,7 @@ function SectionHeader({ title, count, accent }: { title: string; count: number;
   );
 }
 
-function MatchCard({ match, hostName, isLive }: { match: TriviaMatch; hostName?: string; isLive?: boolean }) {
+function MatchCard({ match, hostName, isLive, isDaily }: { match: TriviaMatch; hostName?: string; isLive?: boolean; isDaily?: boolean }) {
   const playerCount = match.players.length;
   const maxPlayers = Number(match.max_players);
   const isFull = playerCount >= maxPlayers;
@@ -84,6 +84,14 @@ function MatchCard({ match, hostName, isLive }: { match: TriviaMatch; hostName?:
             Live
           </span>
         )}
+        {!isLive && isDaily && (
+          <span
+            className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
+            style={{ background: `color-mix(in srgb, ${accent} 20%, transparent)`, color: accent, fontFamily: "var(--font-mono)" }}
+          >
+            Daily
+          </span>
+        )}
       </div>
 
       <div className="flex items-center justify-between mb-3">
@@ -98,8 +106,10 @@ function MatchCard({ match, hostName, isLive }: { match: TriviaMatch; hostName?:
 
       <Link
         href={`/trivia-royale/${Number(match.id)}`}
-        className="block text-center rounded-lg px-3 py-1.5 text-xs font-semibold hover:opacity-90 transition-opacity text-white"
-        style={{ background: accent }}
+        className={`block text-center rounded-lg px-3 py-1.5 text-xs font-semibold hover:opacity-90 transition-opacity ${isDaily ? "border" : "text-white"}`}
+        style={isDaily
+          ? { borderColor: `color-mix(in srgb, ${accent} 50%, transparent)`, color: accent }
+          : { background: accent }}
       >
         {isFull ? "View lobby" : "Join match"}
       </Link>
@@ -285,10 +295,7 @@ export default function TriviaRoyalePage() {
                   {dailyMatches.map((m) => (
                     <div key={Number(m.id)} className="relative">
                       <div className="absolute top-0 left-0 right-0 h-[3px] rounded-t-xl z-10" style={{ backgroundColor: accent }} />
-                      <div className="absolute top-1.5 right-2 z-10">
-                        <span className="rounded-full px-1.5 py-0.5 text-[10px] font-semibold" style={{ background: `color-mix(in srgb, ${accent} 20%, transparent)`, color: accent, fontFamily: "var(--font-mono)" }}>Daily</span>
-                      </div>
-                      <MatchCard match={m} hostName={hostNames[m.host_str?.toLowerCase?.() ?? ""]} />
+                      <MatchCard match={m} hostName={hostNames[m.host_str?.toLowerCase?.() ?? ""]} isDaily />
                     </div>
                   ))}
                 </div>

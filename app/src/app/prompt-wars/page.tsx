@@ -86,11 +86,12 @@ function StatePill({ state }: { state: number }) {
   );
 }
 
-function MatchRow({ m }: { m: Match }) {
+function MatchRow({ m, isDaily }: { m: Match; isDaily?: boolean }) {
   const state = Number(m.state);
   const playerCount = m.players.length;
   const maxP = Number(m.max_players);
   const isCompleted = state === STATE_JUDGED || state === STATE_CANCELLED;
+  const accent = "var(--game-prompt-wars)";
 
   return (
     <Link
@@ -115,7 +116,17 @@ function MatchRow({ m }: { m: Match }) {
             )}
           </p>
         </div>
-        <StatePill state={state} />
+        <div className="flex flex-col items-end gap-1 shrink-0">
+          {isDaily && (
+            <span
+              className="rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
+              style={{ background: `color-mix(in srgb, ${accent} 20%, transparent)`, color: accent, fontFamily: "var(--font-mono)" }}
+            >
+              Daily
+            </span>
+          )}
+          <StatePill state={state} />
+        </div>
       </div>
     </Link>
   );
@@ -298,10 +309,7 @@ export default function PromptWarsPage() {
                   {dailyMatches.map((m) => (
                     <div key={String(m.id)} className="relative">
                       <div className="absolute top-0 left-0 right-0 h-[3px] rounded-t-xl" style={{ backgroundColor: accent }} />
-                      <div className="absolute top-1.5 right-2 z-10">
-                        <span className="rounded-full px-1.5 py-0.5 text-[10px] font-semibold" style={{ background: `color-mix(in srgb, ${accent} 20%, transparent)`, color: accent, fontFamily: "var(--font-mono)" }}>Daily</span>
-                      </div>
-                      <MatchRow m={m} />
+                      <MatchRow m={m} isDaily />
                     </div>
                   ))}
                 </div>

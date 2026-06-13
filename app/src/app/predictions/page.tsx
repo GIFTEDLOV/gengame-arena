@@ -85,7 +85,7 @@ function SectionHeader({ title, count, accent }: { title: string; count: number;
   );
 }
 
-function MarketCard({ market, username }: { market: Market; username?: string }) {
+function MarketCard({ market, username, isDaily }: { market: Market; username?: string; isDaily?: boolean }) {
   const state = Number(market.state);
   const resTs = Number(market.resolution_datetime);
   const isPastDeadline = Date.now() / 1000 > resTs;
@@ -105,16 +105,26 @@ function MarketCard({ market, username }: { market: Market; username?: string })
     >
       <div className="flex items-start justify-between gap-2 mb-2">
         <p className="text-sm font-medium leading-snug flex-1">{market.question}</p>
-        <span
-          className="shrink-0 text-xs rounded px-1.5 py-0.5 border"
-          style={{
-            borderColor: `color-mix(in srgb, ${accent} 30%, transparent)`,
-            color: accent,
-            fontFamily: "var(--font-mono)",
-          }}
-        >
-          {isBinary ? "⚡ YES/NO" : "# Numeric"}
-        </span>
+        <div className="flex flex-col items-end gap-1 shrink-0">
+          {isDaily && (
+            <span
+              className="rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
+              style={{ background: `color-mix(in srgb, ${accent} 20%, transparent)`, color: accent, fontFamily: "var(--font-mono)" }}
+            >
+              Daily
+            </span>
+          )}
+          <span
+            className="text-xs rounded px-1.5 py-0.5 border"
+            style={{
+              borderColor: `color-mix(in srgb, ${accent} 30%, transparent)`,
+              color: accent,
+              fontFamily: "var(--font-mono)",
+            }}
+          >
+            {isBinary ? "⚡ YES/NO" : "# Numeric"}
+          </span>
+        </div>
       </div>
 
       <div className="flex items-center justify-between mb-3" style={{ fontFamily: "var(--font-mono)" }}>
@@ -142,8 +152,10 @@ function MarketCard({ market, username }: { market: Market; username?: string })
 
       <Link
         href={`/predictions/${Number(market.id)}`}
-        className="block text-center rounded-lg px-3 py-1.5 text-xs font-semibold hover:opacity-90 transition-opacity text-[#0a0a0f]"
-        style={{ background: accent }}
+        className={`block text-center rounded-lg px-3 py-1.5 text-xs font-semibold hover:opacity-90 transition-opacity ${isDaily ? "border" : "text-[#0a0a0f]"}`}
+        style={isDaily
+          ? { borderColor: `color-mix(in srgb, ${accent} 50%, transparent)`, color: accent }
+          : { background: accent }}
       >
         {state === PRED_STATE_OPEN && !isPastDeadline ? "Join & predict" :
          state === PRED_STATE_OPEN && isPastDeadline ? "Resolve now" :
@@ -371,10 +383,7 @@ export default function PredictionsPage() {
                   {dailyMarkets.map((m) => (
                     <div key={Number(m.id)} className="relative">
                       <div className="absolute top-0 left-0 right-0 h-[3px] rounded-t-xl z-10" style={{ backgroundColor: accent }} />
-                      <div className="absolute top-1.5 right-2 z-10">
-                        <span className="rounded-full px-1.5 py-0.5 text-[10px] font-semibold" style={{ background: `color-mix(in srgb, ${accent} 20%, transparent)`, color: accent, fontFamily: "var(--font-mono)" }}>Daily</span>
-                      </div>
-                      <MarketCard market={m} />
+                      <MarketCard market={m} isDaily />
                     </div>
                   ))}
                 </div>

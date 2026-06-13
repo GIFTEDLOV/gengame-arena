@@ -19,9 +19,10 @@ STATE_ENDED      = u8(4)   # winner declared
 STATE_CANCELLED  = u8(5)   # cancelled or AI failed
 
 ZERO_ADDR_STR = "0x" + "0" * 40
+DAILY_SENTINEL = "0x0000000000000000000000000000000000da17a1"
 
-ERROR_EXPECTED = "[EXPECTED]"   # business-logic errors — deterministic across validators
-ERROR_EXTERNAL = "[EXTERNAL]"   # network/AI failures — non-deterministic, may retry
+ERROR_EXPECTED = "[EXPECTED]"   # business-logic errors --- deterministic across validators
+ERROR_EXTERNAL = "[EXTERNAL]"   # network/AI failures --- non-deterministic, may retry
 
 
 def _addrs_to_json(addrs: list) -> str:
@@ -61,6 +62,7 @@ class TriviaMatch:
     answer_deadline: u64    # 0 = not set
     winner_str: str         # empty or lowercase hex addr
     created_at: u64
+    is_daily_generated: bool
 
 
 class TriviaRoyale(gl.Contract):
@@ -69,16 +71,20 @@ class TriviaRoyale(gl.Contract):
     open_ids_json: str    # JSON [u64] matches in WAITING state
     active_ids_json: str  # JSON [u64] matches in IN_PROGRESS or GENERATING
     user_registry_address: Address
+    last_daily_generation: u64
+    daily_match_ids_json: str
 
     def __init__(self, user_registry_address: Address) -> None:
         self.next_match_id = u64(0)
         self.open_ids_json = "[]"
         self.active_ids_json = "[]"
+        self.last_daily_generation = u64(0)
+        self.daily_match_ids_json = "[]"
         if not isinstance(user_registry_address, Address):
             user_registry_address = Address(user_registry_address)
         self.user_registry_address = user_registry_address
 
-    # ── helpers ───────────────────────────────────────────────────────────────
+    # ------ helpers ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
     def _save(self, mid: u64, m: TriviaMatch) -> None:
         self.matches[str(int(mid))] = m
@@ -103,7 +109,7 @@ class TriviaRoyale(gl.Contract):
         ids = [x for x in ids if x != int(mid)]
         return _strs_to_json(ids)
 
-    # ── write methods ─────────────────────────────────────────────────────────
+    # ------ write methods ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
     @gl.public.write
     def create_match(self, topic: str, max_players: u32 = u32(10)) -> u64:
@@ -162,6 +168,7 @@ Respond as JSON in exactly this format:
                 answer_deadline=u64(0),
                 winner_str="",
                 created_at=u64(now),
+                is_daily_generated=False,
             ))
             self.open_ids_json = self._add_id(self.open_ids_json, match_id)
         else:
@@ -180,6 +187,7 @@ Respond as JSON in exactly this format:
                 answer_deadline=u64(0),
                 winner_str="",
                 created_at=u64(now),
+                is_daily_generated=False,
             ))
         return match_id
 
@@ -203,7 +211,7 @@ Respond as JSON in exactly this format:
             state=m.state, rejection_reason=m.rejection_reason,
             questions_json=m.questions_json, current_round=m.current_round,
             round_answers_json=m.round_answers_json, answer_deadline=m.answer_deadline,
-            winner_str=m.winner_str, created_at=m.created_at,
+            winner_str=m.winner_str, is_daily_generated=m.is_daily_generated, created_at=m.created_at,
         ))
 
     @gl.public.write
@@ -260,7 +268,7 @@ Respond as JSON in exactly this format:
             while len(questions) < NUM_QUESTIONS:
                 questions.append({
                     "type": "mc",
-                    "text": f"Bonus question about {m.topic}: True or false — this topic is interesting?",
+                    "text": f"Bonus question about {m.topic}: True or false --- this topic is interesting-",
                     "options": ["A) True", "B) False", "C) Maybe", "D) Unknown"],
                     "correct_answer": "A",
                     "alternates": [],
@@ -276,6 +284,7 @@ Respond as JSON in exactly this format:
             round_answers_json="{}",
             answer_deadline=u64(deadline),
             winner_str="",
+            is_daily_generated=m.is_daily_generated,
             created_at=m.created_at,
         ))
         self.open_ids_json = self._remove_id(self.open_ids_json, match_id)
@@ -306,7 +315,7 @@ Respond as JSON in exactly this format:
             questions_json=m.questions_json, current_round=m.current_round,
             round_answers_json=_json.dumps(round_answers),
             answer_deadline=m.answer_deadline,
-            winner_str=m.winner_str, created_at=m.created_at,
+            winner_str=m.winner_str, is_daily_generated=m.is_daily_generated, created_at=m.created_at,
         ))
 
     @gl.public.write
@@ -402,7 +411,7 @@ Respond as JSON in exactly this format:
                 questions_json=m.questions_json, current_round=u8(new_round % 256),
                 round_answers_json="{}",
                 answer_deadline=u64(0),
-                winner_str=str(winner).lower(), created_at=m.created_at,
+                winner_str=str(winner).lower(), is_daily_generated=m.is_daily_generated, created_at=m.created_at,
             ))
             self.active_ids_json = self._remove_id(self.active_ids_json, match_id)
             registry = gl.get_contract_at(self.user_registry_address)
@@ -413,7 +422,7 @@ Respond as JSON in exactly this format:
                        for p in players]
             registry.emit().record_match_batch(entries)
         elif len(survivors) == 0:
-            # All wrong — no one eliminated this round; advance without eliminating
+            # All wrong --- no one eliminated this round; advance without eliminating
             if new_round >= len(questions):
                 last_survivor = players[0] if players else None
                 for p in players:
@@ -429,6 +438,7 @@ Respond as JSON in exactly this format:
                     round_answers_json="{}",
                     answer_deadline=u64(0),
                     winner_str=str(last_survivor).lower() if last_survivor else "",
+                    is_daily_generated=m.is_daily_generated,
                     created_at=m.created_at,
                 ))
                 self.active_ids_json = self._remove_id(self.active_ids_json, match_id)
@@ -442,10 +452,10 @@ Respond as JSON in exactly this format:
                     questions_json=m.questions_json, current_round=u8(new_round % 256),
                     round_answers_json="{}",
                     answer_deadline=u64(new_deadline),
-                    winner_str="", created_at=m.created_at,
+                    winner_str="", is_daily_generated=m.is_daily_generated, created_at=m.created_at,
                 ))
         else:
-            # 2+ survivors — advance to next round
+            # 2+ survivors --- advance to next round
             if new_round >= len(questions):
                 if len(questions) >= 40:
                     winner = survivors[0]
@@ -458,7 +468,7 @@ Respond as JSON in exactly this format:
                         questions_json=m.questions_json, current_round=u8(new_round % 256),
                         round_answers_json="{}",
                         answer_deadline=u64(0),
-                        winner_str=str(winner).lower(), created_at=m.created_at,
+                        winner_str=str(winner).lower(), is_daily_generated=m.is_daily_generated, created_at=m.created_at,
                     ))
                     self.active_ids_json = self._remove_id(self.active_ids_json, match_id)
                     registry = gl.get_contract_at(self.user_registry_address)
@@ -478,7 +488,7 @@ Respond as JSON in exactly this format:
                     questions_json=m.questions_json, current_round=u8(new_round % 256),
                     round_answers_json="{}",
                     answer_deadline=u64(new_deadline),
-                    winner_str="", created_at=m.created_at,
+                    winner_str="", is_daily_generated=m.is_daily_generated, created_at=m.created_at,
                 ))
 
     def _generate_more_questions(self, match_id: u64, m, elim_list: list, new_round: int, batch_size: int = 8) -> None:
@@ -542,7 +552,7 @@ Respond as JSON in exactly this format:
             current_round=u8(new_round % 256),
             round_answers_json="{}",
             answer_deadline=u64(new_deadline),
-            winner_str="", created_at=m.created_at,
+            winner_str="", is_daily_generated=m.is_daily_generated, created_at=m.created_at,
         ))
 
     @gl.public.write
@@ -561,11 +571,11 @@ Respond as JSON in exactly this format:
             state=STATE_CANCELLED, rejection_reason="Cancelled by host",
             questions_json=m.questions_json, current_round=m.current_round,
             round_answers_json=m.round_answers_json, answer_deadline=m.answer_deadline,
-            winner_str=m.winner_str, created_at=m.created_at,
+            winner_str=m.winner_str, is_daily_generated=m.is_daily_generated, created_at=m.created_at,
         ))
         self.open_ids_json = self._remove_id(self.open_ids_json, match_id)
 
-    # ── view methods ──────────────────────────────────────────────────────────
+    # ------ view methods ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
     @gl.public.view
     def get_match(self, match_id: u64) -> Optional[TriviaMatch]:
@@ -607,3 +617,106 @@ Respond as JSON in exactly this format:
         if idx < len(questions):
             return _json.dumps(questions[idx])
         return "{}"
+
+    @gl.public.write
+    def generate_daily_content_if_due(self) -> None:
+        now = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
+        current_day = (now // 86400) * 86400
+        last_day = (int(self.last_daily_generation) // 86400) * 86400 if int(self.last_daily_generation) > 0 else 0
+        if current_day == last_day:
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Daily content already generated today")
+        self._generate_daily_ai(now)
+
+    def _generate_daily_ai(self, now: int) -> None:
+        generation_prompt = self._build_daily_generation_prompt(now)
+
+        def leader_fn():
+            return gl.nondet.exec_prompt(generation_prompt, response_format='json')
+
+        def validator_fn(leader_result) -> bool:
+            if not isinstance(leader_result, gl.vm.Return):
+                return False
+            return self._validate_daily_batch_structure(leader_result.calldata)
+
+        batch = gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
+        self._create_daily_matches_from_batch(batch, now)
+        self.last_daily_generation = u64(now)
+
+    def _build_daily_generation_prompt(self, now: int) -> str:
+        current_date_iso = datetime.datetime.fromtimestamp(now, datetime.timezone.utc).strftime("%Y-%m-%d")
+        return (
+            f"You are generating 5 trivia topics for daily battle-royale matches. "
+            f"Each topic seeds a pool of AI-generated questions that players will compete on.\n\n"
+            f"Today is {current_date_iso}.\n\n"
+            f"Generate 5 diverse topics:\n"
+            f"- Mix of breadth: some narrow (specific movies, books, eras), some broad (general history, sciences)\n"
+            f"- Mix of depth: some casual, some require real knowledge\n"
+            f"- Mix of vibes: pop culture, classics, sciences, sports, geography, art\n"
+            f"- Each topic should be RICH enough that an AI could generate 8+ good questions about it\n"
+            f"- Avoid topics tied to current events that may date quickly\n"
+            f"- Avoid politically charged topics\n\n"
+            f"Constraints per topic:\n"
+            f"- topic: 30-80 character description, specific enough to seed good questions\n"
+            f"- max_players: integer between 6 and 30\n"
+            f"- duration_hours: integer between 6 and 24\n\n"
+            f"Respond as JSON in exactly this format:\n"
+            f'{{"topics": ['
+            f'{{"topic": "Studio Ghibli films and their visual themes", "max_players": 15, "duration_hours": 12}},'
+            f'{{"topic": "The history of paper and printing across civilizations", "max_players": 12, "duration_hours": 18}}'
+            f']}}\n\n'
+            f"Exactly 5 entries in the topics array."
+        )
+
+    def _validate_daily_batch_structure(self, data: dict) -> bool:
+        topics = data.get("topics", [])
+        if len(topics) != 5:
+            return False
+        for t in topics:
+            if not isinstance(t.get("topic"), str) or len(t["topic"]) < 10:
+                return False
+            mp = t.get("max_players", 0)
+            dh = t.get("duration_hours", 0)
+            if not (6 <= int(mp) <= 30):
+                return False
+            if not (6 <= int(dh) <= 24):
+                return False
+        return True
+
+    def _create_daily_matches_from_batch(self, batch: dict, now: int) -> None:
+        topics_data = batch.get("topics", [])
+        new_ids = []
+        for item in topics_data:
+            topic = str(item["topic"])[:MAX_TOPIC_LEN]
+            max_players = max(6, min(30, int(item.get("max_players", 15))))
+            match_id = self.next_match_id
+            self.next_match_id = u64(int(match_id) + 1)
+            self._save(match_id, TriviaMatch(
+                id=match_id,
+                host_str=DAILY_SENTINEL,
+                topic=topic,
+                max_players=u32(max_players),
+                players_json="[]",
+                eliminated_json="[]",
+                state=STATE_WAITING,
+                rejection_reason="",
+                questions_json="[]",
+                current_round=u8(0),
+                round_answers_json="{}",
+                answer_deadline=u64(0),
+                winner_str="",
+                is_daily_generated=True,
+                created_at=u64(now),
+            ))
+            self.open_ids_json = self._add_id(self.open_ids_json, match_id)
+            new_ids.append(int(match_id))
+        self.daily_match_ids_json = _json.dumps(new_ids)
+
+    @gl.public.view
+    def get_daily_match_ids(self) -> list[u64]:
+        ids = _json_to_strs(self.daily_match_ids_json) if self.daily_match_ids_json and self.daily_match_ids_json != "[]" else []
+        return [u64(x) for x in ids]
+
+    @gl.public.view
+    def get_last_daily_generation(self) -> u64:
+        return self.last_daily_generation
+

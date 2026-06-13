@@ -587,3 +587,59 @@ def test_get_markets_for_player_after_join(contract, direct_vm):
     contract.join_and_predict_binary(market_id, False)
     carol_ids = [int(x) for x in contract.get_markets_for_player(CAROL_ADDR)]
     assert int(market_id) in carol_ids
+
+
+# ── daily AI content generation ───────────────────────────────────────────────
+
+DAILY_MARKETS_RESPONSE = json.dumps({
+    "markets": [
+        {"question": "Will the S&P 500 close above 5,500 tomorrow?", "market_type": "binary", "resolution_hours_from_now": 24},
+        {"question": "Will Bitcoin close above $70,000 tomorrow?", "market_type": "binary", "resolution_hours_from_now": 24},
+        {"question": "Will the Fed announce a rate change this week?", "market_type": "binary", "resolution_hours_from_now": 48},
+        {"question": "What will be the closing price of NVDA tomorrow?", "market_type": "numeric", "resolution_hours_from_now": 30, "unit": "USD"},
+        {"question": "What will be the BTC/USD price at 00:00 UTC in 48 hours?", "market_type": "numeric", "resolution_hours_from_now": 48, "unit": "USD"},
+    ]
+})
+
+
+def test_generate_daily_content_first_time_succeeds(contract, direct_vm):
+    direct_vm.sender = ALICE_ADDR
+    direct_vm.mock_llm(".*", DAILY_MARKETS_RESPONSE)
+    contract.generate_daily_content_if_due()
+    ids = [int(x) for x in contract.get_daily_market_ids()]
+    assert len(ids) == 5
+    for mid in ids:
+        m = contract.get_market(mid)
+        assert m is not None
+        assert m.is_daily_generated is True
+
+
+def test_generate_daily_content_second_call_same_day_reverts(contract, direct_vm):
+    direct_vm.sender = ALICE_ADDR
+    direct_vm.mock_llm(".*", DAILY_MARKETS_RESPONSE)
+    contract.generate_daily_content_if_due()
+    with direct_vm.expect_revert("Daily content already generated today"):
+        contract.generate_daily_content_if_due()
+
+
+def test_generate_daily_content_next_day_succeeds(contract, direct_vm):
+    direct_vm.sender = ALICE_ADDR
+    direct_vm.mock_llm(".*", DAILY_MARKETS_RESPONSE)
+    contract.generate_daily_content_if_due()
+    direct_vm.warp((datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=25)).isoformat())
+    contract.generate_daily_content_if_due()
+    ids = [int(x) for x in contract.get_daily_market_ids()]
+    assert len(ids) == 5
+
+
+def test_daily_markets_have_correct_flag(contract, direct_vm):
+    direct_vm.sender = ALICE_ADDR
+    direct_vm.mock_llm(".*", VERIFY_YES)
+    regular_id = contract.create_market("Will it rain today?", 0, IN_48H)
+    m_regular = contract.get_market(regular_id)
+    assert m_regular.is_daily_generated is False
+    direct_vm.mock_llm(".*", DAILY_MARKETS_RESPONSE)
+    contract.generate_daily_content_if_due()
+    for mid in [int(x) for x in contract.get_daily_market_ids()]:
+        m = contract.get_market(mid)
+        assert m.is_daily_generated is True

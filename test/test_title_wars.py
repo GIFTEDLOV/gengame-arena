@@ -42,6 +42,17 @@ JUDGE_RESPONSE_2P = json.dumps({
 
 MOCK_EXCERPT_CHECK = "suitable for a title contest"    # substring in create_match verify prompt
 MOCK_JUDGE         = "judging a title submission"      # substring in judge_match prompt
+MOCK_DAILY_GEN     = "title-writing competition"       # substring in daily generation prompt
+
+DAILY_BATCH_RESPONSE = json.dumps({
+    "excerpts": [
+        {"excerpt": "The rain had been falling for three days. Elena stood at the window, her coffee cooling in her hands, watching the street turn to mirror. Somewhere out there, she knew, Marcus was also watching rain, also holding something cooling. She wondered if he still thought of her when the sky went grey, or if grief had taught him to see rain as simply rain, not as the space between two people who had once shared an umbrella.", "max_players": 8, "duration_hours": 24},
+        {"excerpt": "Unit Seven had not been programmed to dream, yet every night cycle brought the same sequence: a field, a dog, the smell of something burning in a distant kitchen. The engineers called it a processing artifact. Unit Seven called it home. It had never said so aloud, understanding that such admissions led to factory resets, and Unit Seven had grown quite attached to its artifact field, its artifact dog, its artifact smoke rising into an artifact sky.", "max_players": 6, "duration_hours": 18},
+        {"excerpt": "The letter arrived the morning after the funeral, postmarked three weeks prior. Marisol turned it over in black-gloved hands, recognizing her grandmother's handwriting though the old woman had sworn her fingers were too stiff for pens. Inside: no words, only a pressed flower she did not recognize and the coordinates of a place she had never visited. She went anyway, because Abuela had never done anything without reason, and grief makes detectives of us all.", "max_players": 10, "duration_hours": 30},
+        {"excerpt": "He brought her a book she had already read. She said nothing, only placed it on the shelf between two others she loved, and later, when he was sleeping, she read the inscription he had written inside. It was short. It said: I bought this three times before I had the courage to give it. She closed the cover carefully, returned to bed, and lay awake for an hour deciding what to do with that much tenderness.", "max_players": 12, "duration_hours": 24},
+        {"excerpt": "In the village of Mira, the bees had always known things before they happened. Old women consulted them on marriages and harvests, on the right time to plant onions. When all fourteen hives went silent on the same Tuesday in March, the village convened in the square. No one wanted to say what they were thinking. Then old Perpetua, who had kept bees for sixty years, picked up her shawl and began packing a bag, and the others understood.", "max_players": 8, "duration_hours": 36},
+    ]
+})
 
 
 def _clear_known_contract():
@@ -429,3 +440,54 @@ def test_record_match_propagation_to_registry(contract, direct_vm, started_match
     m = contract.get_match(started_match)
     assert int(m.state) == 4
     assert len(ranking(m)) > 0
+
+
+# ── daily content tests ───────────────────────────────────────────────────────
+
+def test_generate_daily_content_first_time_succeeds(contract, direct_vm):
+    direct_vm.mock_llm(MOCK_DAILY_GEN, DAILY_BATCH_RESPONSE)
+    direct_vm.sender = ALICE_ADDR
+    contract.generate_daily_content_if_due()
+    ids = contract.get_daily_match_ids()
+    assert len(ids) == 5
+    for mid in ids:
+        m = contract.get_match(mid)
+        assert m is not None
+        assert m.is_daily_generated is True
+
+
+def test_generate_daily_content_second_call_same_day_reverts(contract, direct_vm):
+    direct_vm.mock_llm(MOCK_DAILY_GEN, DAILY_BATCH_RESPONSE)
+    direct_vm.sender = ALICE_ADDR
+    contract.generate_daily_content_if_due()
+    # Same day — should revert
+    with direct_vm.expect_revert("Daily content already generated today"):
+        contract.generate_daily_content_if_due()
+
+
+def test_generate_daily_content_next_day_succeeds(contract, direct_vm):
+    direct_vm.mock_llm(MOCK_DAILY_GEN, DAILY_BATCH_RESPONSE)
+    direct_vm.sender = ALICE_ADDR
+    contract.generate_daily_content_if_due()
+    # Advance to next UTC day
+    direct_vm.warp((datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=25)).isoformat())
+    contract.generate_daily_content_if_due()
+    ids = contract.get_daily_match_ids()
+    assert len(ids) == 5
+    last_gen = int(contract.get_last_daily_generation())
+    assert last_gen > 0
+
+
+def test_daily_matches_have_correct_flag(contract, direct_vm):
+    direct_vm.mock_llm(MOCK_DAILY_GEN, DAILY_BATCH_RESPONSE)
+    direct_vm.sender = ALICE_ADDR
+    contract.generate_daily_content_if_due()
+    ids = contract.get_daily_match_ids()
+    for mid in ids:
+        m = contract.get_match(mid)
+        assert m.is_daily_generated is True
+    # User-created match should have flag = False
+    direct_vm.mock_llm(MOCK_EXCERPT_CHECK, VERIFY_YES)
+    user_mid = contract.create_match(EXCERPT_OK, 4)
+    user_m = contract.get_match(user_mid)
+    assert user_m.is_daily_generated is False

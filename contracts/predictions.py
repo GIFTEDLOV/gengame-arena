@@ -16,6 +16,7 @@ STATE_CANCELLED = u8(3)
 MAX_PLAYERS = 100
 MIN_HOURS   = 0    # no minimum for testing; enforce in UI layer
 MAX_HOURS   = 168  # 7 days
+DAILY_SENTINEL = "0x0000000000000000000000000000000000da17a1"
 
 ERROR_EXPECTED = "[EXPECTED]"   # business-logic errors — deterministic across validators
 ERROR_EXTERNAL = "[EXTERNAL]"   # network/AI failures — non-deterministic, may retry
@@ -61,6 +62,7 @@ class Market:
     actual_answer_source: str
     ranking_json: str            # JSON [hex_addr, ...] ranking[0] = winner
     resolution_reasoning: str
+    is_daily_generated: bool
 
 
 class Predictions(gl.Contract):
@@ -69,11 +71,15 @@ class Predictions(gl.Contract):
     open_ids_json: str     # JSON [int, ...] — IDs of OPEN markets
     resolved_ids_json: str # JSON [int, ...] — IDs of RESOLVED markets
     user_registry_address: Address
+    last_daily_generation: u64
+    daily_market_ids_json: str
 
     def __init__(self, user_registry_address: Address) -> None:
         self.next_market_id = u64(0)
         self.open_ids_json = "[]"
         self.resolved_ids_json = "[]"
+        self.last_daily_generation = u64(0)
+        self.daily_market_ids_json = "[]"
         if not isinstance(user_registry_address, Address):
             user_registry_address = Address(user_registry_address)
         self.user_registry_address = user_registry_address
@@ -187,6 +193,7 @@ Respond as JSON in exactly this format:
             actual_answer_source="",
             ranking_json="[]",
             resolution_reasoning="",
+            is_daily_generated=False,
         ))
         self.next_market_id = u64(int(market_id) + 1)
 
@@ -235,6 +242,7 @@ Respond as JSON in exactly this format:
             submission_times_json=_to_json(sub_times),
             actual_answer=m.actual_answer, actual_answer_source=m.actual_answer_source,
             ranking_json=m.ranking_json, resolution_reasoning=m.resolution_reasoning,
+            is_daily_generated=m.is_daily_generated,
         ))
 
     @gl.public.write
@@ -279,6 +287,7 @@ Respond as JSON in exactly this format:
             submission_times_json=_to_json(sub_times),
             actual_answer=m.actual_answer, actual_answer_source=m.actual_answer_source,
             ranking_json=m.ranking_json, resolution_reasoning=m.resolution_reasoning,
+            is_daily_generated=m.is_daily_generated,
         ))
 
     @gl.public.write
@@ -384,6 +393,7 @@ Respond as JSON in exactly this format:
             actual_answer=actual_str, actual_answer_source=source,
             ranking_json=_addrs_to_json(ranking_addrs),
             resolution_reasoning=reasoning,
+            is_daily_generated=m.is_daily_generated,
         ))
 
         self.open_ids_json = self._remove_from_list(self.open_ids_json, market_id)
@@ -418,8 +428,120 @@ Respond as JSON in exactly this format:
             submission_times_json=m.submission_times_json,
             actual_answer=m.actual_answer, actual_answer_source=m.actual_answer_source,
             ranking_json=m.ranking_json, resolution_reasoning=m.resolution_reasoning,
+            is_daily_generated=m.is_daily_generated,
         ))
         self.open_ids_json = self._remove_from_list(self.open_ids_json, market_id)
+
+    @gl.public.write
+    def generate_daily_content_if_due(self) -> None:
+        now = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
+        current_day = (now // 86400) * 86400
+        last_day = (int(self.last_daily_generation) // 86400) * 86400 if int(self.last_daily_generation) > 0 else 0
+        if current_day == last_day:
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Daily content already generated today")
+        self._generate_daily_ai(now)
+
+    def _generate_daily_ai(self, now: int) -> None:
+        generation_prompt = self._build_daily_generation_prompt(now)
+
+        def leader_fn():
+            return gl.nondet.exec_prompt(generation_prompt, response_format='json')
+
+        def validator_fn(leader_result) -> bool:
+            if not isinstance(leader_result, gl.vm.Return):
+                return False
+            return self._validate_daily_batch_structure(leader_result.calldata)
+
+        batch = gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
+        self._create_daily_markets_from_batch(batch, now)
+        self.last_daily_generation = u64(now)
+
+    def _build_daily_generation_prompt(self, now: int) -> str:
+        current_date_iso = datetime.datetime.fromtimestamp(now, datetime.timezone.utc).strftime("%Y-%m-%d")
+        resolution_date = datetime.datetime.fromtimestamp(now + 48 * 3600, datetime.timezone.utc).strftime("%Y-%m-%d")
+        return (
+            f"You are generating 5 prediction market questions for a daily forecasting game. "
+            f"Each question must be objectively verifiable later via standard web sources.\n\n"
+            f"Today is {current_date_iso}. Generate questions that resolve within 24-72 hours of now.\n\n"
+            f"Mix of types:\n"
+            f"- 3 binary questions (YES/NO outcomes)\n"
+            f"- 2 numeric questions (specific number, with clear units)\n\n"
+            f"Categories to cover (diverse, not all same topic):\n"
+            f"- Finance: stock indices, crypto prices, market events\n"
+            f"- Weather: temperature, precipitation in specific cities\n"
+            f"- Sports: game outcomes, scores (only if game is in the resolution window)\n"
+            f"- Current events: announcements, decisions, headlines that can be verified\n"
+            f"- Tech: product launches, version releases, milestones\n\n"
+            f"Constraints:\n"
+            f"- Question must be UNAMBIGUOUS — answerable with one definitive answer\n"
+            f"- Must have a clear web-verifiable source\n"
+            f"- Avoid politically charged or subjective topics\n"
+            f"- Numeric questions must specify units clearly\n\n"
+            f"Respond as JSON in exactly this format:\n"
+            f'{{"markets": ['
+            f'{{"question": "Will Bitcoin close above $100,000 on {resolution_date}?", "market_type": "binary", "resolution_hours_from_now": 24}},'
+            f'{{"question": "What will the closing price of NVDA be on {resolution_date}?", "market_type": "numeric", "resolution_hours_from_now": 36, "unit": "USD"}}'
+            f']}}\n\n'
+            f"Constraints per market:\n"
+            f"- market_type: 'binary' or 'numeric'\n"
+            f"- resolution_hours_from_now: integer between 24 and 72\n"
+            f"- unit (numeric only): clear unit string\n"
+            f"- Exactly 5 entries with exactly 3 binary and 2 numeric"
+        )
+
+    def _validate_daily_batch_structure(self, data: dict) -> bool:
+        markets = data.get("markets", [])
+        if len(markets) != 5:
+            return False
+        binary_count = 0
+        numeric_count = 0
+        for m in markets:
+            if not isinstance(m.get("question"), str) or len(m["question"]) < 10:
+                return False
+            mt = m.get("market_type", "")
+            if mt == "binary":
+                binary_count += 1
+            elif mt == "numeric":
+                numeric_count += 1
+            else:
+                return False
+            rh = m.get("resolution_hours_from_now", 0)
+            if not (24 <= int(rh) <= 72):
+                return False
+        return binary_count == 3 and numeric_count == 2
+
+    def _create_daily_markets_from_batch(self, batch: dict, now: int) -> None:
+        markets_data = batch.get("markets", [])
+        new_ids = []
+        for item in markets_data:
+            question = str(item["question"])[:300]
+            mt_str = item.get("market_type", "binary")
+            market_type = MARKET_TYPE_BINARY if mt_str == "binary" else MARKET_TYPE_NUMERIC
+            resolution_hours = max(24, min(72, int(item.get("resolution_hours_from_now", 48))))
+            resolution_ts = u64(now + resolution_hours * 3600)
+            market_id = self.next_market_id
+            self._save_market(market_id, Market(
+                id=market_id,
+                creator=Address(DAILY_SENTINEL),
+                question=question,
+                market_type=market_type,
+                resolution_datetime=resolution_ts,
+                created_at=u64(now),
+                state=STATE_OPEN,
+                rejection_reason="",
+                players_json="[]",
+                predictions_json="[]",
+                submission_times_json="[]",
+                actual_answer="",
+                actual_answer_source="",
+                ranking_json="[]",
+                resolution_reasoning="",
+                is_daily_generated=True,
+            ))
+            self.next_market_id = u64(int(market_id) + 1)
+            self.open_ids_json = self._add_to_list(self.open_ids_json, market_id)
+            new_ids.append(int(market_id))
+        self.daily_market_ids_json = _json.dumps(new_ids)
 
     # ── view methods ──────────────────────────────────────────────────────────
 
@@ -456,3 +578,12 @@ Respond as JSON in exactly this format:
             if self._index_of(players, player) >= 0:
                 result.append(u64(i))
         return result
+
+    @gl.public.view
+    def get_daily_market_ids(self) -> list[u64]:
+        ids = _from_json(self.daily_market_ids_json) if self.daily_market_ids_json and self.daily_market_ids_json != "[]" else []
+        return [u64(x) for x in ids]
+
+    @gl.public.view
+    def get_last_daily_generation(self) -> u64:
+        return self.last_daily_generation

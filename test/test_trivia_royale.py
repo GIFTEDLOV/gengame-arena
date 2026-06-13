@@ -661,3 +661,59 @@ def test_match_not_in_active_after_end(contract, direct_vm, started_match):
     contract.resolve_round(started_match)
     active_ids = [int(x) for x in contract.get_active_matches(10)]
     assert int(started_match) not in active_ids
+
+
+# ── daily AI content generation ───────────────────────────────────────────────
+
+DAILY_TOPICS_RESPONSE = json.dumps({
+    "topics": [
+        {"topic": "Studio Ghibli films and their visual themes", "max_players": 15, "duration_hours": 12},
+        {"topic": "The history of paper and printing across civilizations", "max_players": 12, "duration_hours": 18},
+        {"topic": "Landmarks and geography of ancient Rome", "max_players": 10, "duration_hours": 12},
+        {"topic": "Classic video game franchises from the 1980s and 1990s", "max_players": 20, "duration_hours": 24},
+        {"topic": "Nobel Prize winners in science and their discoveries", "max_players": 8, "duration_hours": 12},
+    ]
+})
+
+
+def test_generate_daily_content_first_time_succeeds(contract, direct_vm):
+    direct_vm.sender = ALICE_ADDR
+    direct_vm.mock_llm(".*", DAILY_TOPICS_RESPONSE)
+    contract.generate_daily_content_if_due()
+    ids = [int(x) for x in contract.get_daily_match_ids()]
+    assert len(ids) == 5
+    for mid in ids:
+        m = contract.get_match(mid)
+        assert m is not None
+        assert m.is_daily_generated is True
+
+
+def test_generate_daily_content_second_call_same_day_reverts(contract, direct_vm):
+    direct_vm.sender = ALICE_ADDR
+    direct_vm.mock_llm(".*", DAILY_TOPICS_RESPONSE)
+    contract.generate_daily_content_if_due()
+    with direct_vm.expect_revert("Daily content already generated today"):
+        contract.generate_daily_content_if_due()
+
+
+def test_generate_daily_content_next_day_succeeds(contract, direct_vm):
+    direct_vm.sender = ALICE_ADDR
+    direct_vm.mock_llm(".*", DAILY_TOPICS_RESPONSE)
+    contract.generate_daily_content_if_due()
+    direct_vm.warp((datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=25)).isoformat())
+    contract.generate_daily_content_if_due()
+    ids = [int(x) for x in contract.get_daily_match_ids()]
+    assert len(ids) == 5
+
+
+def test_daily_matches_have_correct_flag(contract, direct_vm):
+    direct_vm.sender = ALICE_ADDR
+    direct_vm.mock_llm(".*", VERIFY_YES)
+    regular_id = contract.create_match("Ancient Greek philosophy", 6)
+    m_regular = contract.get_match(regular_id)
+    assert m_regular.is_daily_generated is False
+    direct_vm.mock_llm(".*", DAILY_TOPICS_RESPONSE)
+    contract.generate_daily_content_if_due()
+    for mid in [int(x) for x in contract.get_daily_match_ids()]:
+        m = contract.get_match(mid)
+        assert m.is_daily_generated is True

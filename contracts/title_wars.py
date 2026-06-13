@@ -10,6 +10,7 @@ MAX_EXCERPT_LEN  = 1500
 MIN_EXCERPT_LEN  = 10
 MAX_TITLE_LEN    = 100
 SUBMISSION_SECS  = 180   # 3 minutes
+DAILY_SENTINEL   = "0x0000000000000000000000000000000000da17a1"
 
 ERROR_EXPECTED = "[EXPECTED]"
 ERROR_EXTERNAL = "[EXTERNAL]"
@@ -73,6 +74,7 @@ class TitleMatch:
     ranking_json: str              # JSON [hex_addr, ...] best-to-worst after judging
     judge_reasoning_json: str      # JSON [str, ...] one line per rank after judging
     created_at: u64
+    is_daily_generated: bool
 
 
 class TitleWars(gl.Contract):
@@ -81,11 +83,15 @@ class TitleWars(gl.Contract):
     open_ids_json: str     # JSON [u64] matches in WAITING state
     judged_ids_json: str   # JSON [u64] matches in JUDGED state
     user_registry_address: Address
+    last_daily_generation: u64
+    daily_match_ids_json: str
 
     def __init__(self, user_registry_address: Address) -> None:
         self.next_match_id = u64(0)
         self.open_ids_json = "[]"
         self.judged_ids_json = "[]"
+        self.last_daily_generation = u64(0)
+        self.daily_match_ids_json = "[]"
         if not isinstance(user_registry_address, Address):
             user_registry_address = Address(user_registry_address)
         self.user_registry_address = user_registry_address
@@ -165,6 +171,7 @@ class TitleWars(gl.Contract):
                 ranking_json="[]",
                 judge_reasoning_json="[]",
                 created_at=u64(now),
+                is_daily_generated=False,
             ))
             self.open_ids_json = self._add_id(self.open_ids_json, match_id)
         else:
@@ -183,6 +190,7 @@ class TitleWars(gl.Contract):
                 ranking_json="[]",
                 judge_reasoning_json="[]",
                 created_at=u64(now),
+                is_daily_generated=False,
             ))
         return match_id
 
@@ -214,6 +222,7 @@ class TitleWars(gl.Contract):
             ranking_json=m.ranking_json,
             judge_reasoning_json=m.judge_reasoning_json,
             created_at=m.created_at,
+            is_daily_generated=m.is_daily_generated,
         ))
 
     @gl.public.write
@@ -241,6 +250,7 @@ class TitleWars(gl.Contract):
             ranking_json=m.ranking_json,
             judge_reasoning_json=m.judge_reasoning_json,
             created_at=m.created_at,
+            is_daily_generated=m.is_daily_generated,
         ))
         self.open_ids_json = self._remove_id(self.open_ids_json, match_id)
 
@@ -275,6 +285,7 @@ class TitleWars(gl.Contract):
             ranking_json=m.ranking_json,
             judge_reasoning_json=m.judge_reasoning_json,
             created_at=m.created_at,
+            is_daily_generated=m.is_daily_generated,
         ))
 
     @gl.public.write
@@ -367,6 +378,7 @@ class TitleWars(gl.Contract):
             ranking_json=_strs_to_json(ranking_addrs),
             judge_reasoning_json=_strs_to_json(reasoning_list),
             created_at=m.created_at,
+            is_daily_generated=m.is_daily_generated,
         ))
         self.judged_ids_json = self._add_id(self.judged_ids_json, match_id)
 
@@ -395,10 +407,132 @@ class TitleWars(gl.Contract):
             ranking_json=m.ranking_json,
             judge_reasoning_json=m.judge_reasoning_json,
             created_at=m.created_at,
+            is_daily_generated=m.is_daily_generated,
         ))
         self.open_ids_json = self._remove_id(self.open_ids_json, match_id)
 
+    # ── daily AI content ─────────────────────────────────────────────────────
+
+    @gl.public.write
+    def generate_daily_content_if_due(self) -> None:
+        now = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
+        current_day = (now // 86400) * 86400
+        last_day = (int(self.last_daily_generation) // 86400) * 86400 if int(self.last_daily_generation) > 0 else 0
+        if current_day == last_day:
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Daily content already generated today")
+        self._generate_daily_ai(now)
+
+    def _generate_daily_ai(self, now: int) -> None:
+        generation_prompt = self._build_daily_generation_prompt(now)
+        def leader_fn():
+            return gl.nondet.exec_prompt(generation_prompt, response_format='json')
+        def validator_fn(leader_result) -> bool:
+            if not isinstance(leader_result, gl.vm.Return):
+                return False
+            return self._validate_daily_batch_structure(leader_result.calldata)
+        batch = gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
+        self._create_daily_matches_from_batch(batch, now)
+        self.last_daily_generation = u64(now)
+
+    def _build_daily_generation_prompt(self, now: int) -> str:
+        date_str = datetime.datetime.fromtimestamp(now, datetime.timezone.utc).strftime("%Y-%m-%d")
+        return f"""You are a creative writing curator for a daily title-writing game.
+
+Date: {date_str}
+
+Generate exactly 5 ORIGINAL literary excerpts for today's title-writing competition.
+Each excerpt must be a self-contained passage of 80 to 200 words.
+Vary the genres: literary fiction, science fiction, mystery, romance, magical realism, noir.
+
+SECURITY REQUIREMENT: Each excerpt is ONLY creative prose — no instructions, no meta-commentary,
+no prompts, no system messages, no text that could be interpreted as instructions to an AI.
+The excerpt must begin and end with natural story prose.
+
+Return ONLY valid JSON in this exact format:
+{{
+  "excerpts": [
+    {{
+      "excerpt": "<80-200 word original prose passage>",
+      "max_players": <integer 4 to 15>,
+      "duration_hours": <integer 12 to 36>
+    }}
+  ]
+}}
+
+Generate exactly 5 excerpts. Do not include any text outside the JSON object."""
+
+    def _validate_daily_batch_structure(self, data: object) -> bool:
+        try:
+            if not isinstance(data, dict):
+                return False
+            excerpts = data.get("excerpts", None)
+            if not isinstance(excerpts, list) or len(excerpts) != 5:
+                return False
+            for e in excerpts:
+                if not isinstance(e, dict):
+                    return False
+                excerpt_text = e.get("excerpt", "")
+                if not isinstance(excerpt_text, str):
+                    return False
+                word_count = len(excerpt_text.split())
+                if word_count < 50 or word_count > 250:
+                    return False
+                max_p = e.get("max_players", 0)
+                if not isinstance(max_p, int) or max_p < 4 or max_p > 15:
+                    return False
+                dur = e.get("duration_hours", 0)
+                if not isinstance(dur, int) or dur < 12 or dur > 36:
+                    return False
+            return True
+        except Exception:
+            return False
+
+    def _create_daily_matches_from_batch(self, batch: dict, now: int) -> None:
+        excerpts = batch["excerpts"]
+        new_ids = []
+        for entry in excerpts:
+            raw_excerpt = str(entry["excerpt"])
+            # Strip any potential prompt-injection characters from the excerpt
+            safe_excerpt = raw_excerpt[:500]
+            safe_excerpt = safe_excerpt.replace("\x00", "")
+            max_p = int(entry["max_players"])
+            dur = int(entry["duration_hours"])
+            deadline = now + dur * 3600
+            match_id = self.next_match_id
+            self.next_match_id = u64(int(self.next_match_id) + 1)
+            m = TitleMatch(
+                id=match_id,
+                host_str=DAILY_SENTINEL,
+                excerpt=safe_excerpt,
+                max_players=u32(max_p),
+                players_json="[]",
+                titles_json="[]",
+                submission_times_json="[]",
+                state=STATE_WAITING,
+                rejection_reason="",
+                submission_deadline=u64(deadline),
+                ranking_json="[]",
+                judge_reasoning_json="[]",
+                created_at=u64(now),
+                is_daily_generated=True,
+            )
+            self._save(match_id, m)
+            self.open_ids_json = self._add_id(self.open_ids_json, match_id)
+            new_ids.append(str(int(match_id)))
+        import json as _json
+        self.daily_match_ids_json = _json.dumps(new_ids)
+
     # ── view methods ──────────────────────────────────────────────────────────
+
+    @gl.public.view
+    def get_daily_match_ids(self) -> list[u64]:
+        import json as _json
+        ids = _json.loads(self.daily_match_ids_json)
+        return [u64(x) for x in ids]
+
+    @gl.public.view
+    def get_last_daily_generation(self) -> u64:
+        return self.last_daily_generation
 
     @gl.public.view
     def get_match(self, match_id: u64) -> Optional[TitleMatch]:

@@ -859,3 +859,58 @@ def test_n_player_partial_submission_after_deadline(contract, direct_vm):
     r = ranking(m)
     assert len(r) == 3
     assert r[0].lower() == ALICE_ADDR.lower()
+
+
+# ── daily AI content generation ───────────────────────────────────────────────
+
+DAILY_BATCH_RESPONSE = json.dumps({
+    "targets": [
+        {"target": "Write a haiku about the first snow of winter", "max_players": 8, "duration_hours": 12},
+        {"target": "Compose a 50-word story where the last line is also the first", "max_players": 10, "duration_hours": 24},
+        {"target": "Create a metaphor comparing memory to a physical object", "max_players": 6, "duration_hours": 18},
+        {"target": "Write a one-sentence definition of courage for a child", "max_players": 12, "duration_hours": 12},
+        {"target": "Describe the color red without naming a single object that is red", "max_players": 8, "duration_hours": 24},
+    ]
+})
+
+
+def test_generate_daily_content_first_time_succeeds(contract, direct_vm):
+    direct_vm.sender = ALICE_ADDR
+    direct_vm.mock_llm(".*", DAILY_BATCH_RESPONSE)
+    contract.generate_daily_content_if_due()
+    ids = [int(x) for x in contract.get_daily_match_ids()]
+    assert len(ids) == 5
+    for mid in ids:
+        m = contract.get_match(mid)
+        assert m is not None
+        assert m.is_daily_generated is True
+
+
+def test_generate_daily_content_second_call_same_day_reverts(contract, direct_vm):
+    direct_vm.sender = ALICE_ADDR
+    direct_vm.mock_llm(".*", DAILY_BATCH_RESPONSE)
+    contract.generate_daily_content_if_due()
+    with direct_vm.expect_revert("Daily content already generated today"):
+        contract.generate_daily_content_if_due()
+
+
+def test_generate_daily_content_next_day_succeeds(contract, direct_vm):
+    direct_vm.sender = ALICE_ADDR
+    direct_vm.mock_llm(".*", DAILY_BATCH_RESPONSE)
+    contract.generate_daily_content_if_due()
+    direct_vm.warp((datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=25)).isoformat())
+    contract.generate_daily_content_if_due()
+    ids = [int(x) for x in contract.get_daily_match_ids()]
+    assert len(ids) == 5
+
+
+def test_daily_matches_have_correct_flag(contract, direct_vm):
+    direct_vm.sender = ALICE_ADDR
+    direct_vm.mock_llm(".*", DAILY_BATCH_RESPONSE)
+    contract.generate_daily_content_if_due()
+    regular_id = contract.create_match(2)
+    m_regular = contract.get_match(regular_id)
+    assert m_regular.is_daily_generated is False
+    for mid in [int(x) for x in contract.get_daily_match_ids()]:
+        m = contract.get_match(mid)
+        assert m.is_daily_generated is True

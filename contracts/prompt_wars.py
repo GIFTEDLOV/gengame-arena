@@ -42,6 +42,7 @@ TARGETS = [
 ZERO_ADDR = Address(bytes(20))
 DEADLINE_UNSET = u64(0)   # Timer hasn't started yet (match not full / not started)
 MAX_PLAYERS_CAP = 50      # Hard upper limit on match size
+DAILY_SENTINEL = "0x0000000000000000000000000000000000da17a1"
 
 # Match states
 STATE_WAITING   = u8(0)  # Created, accepting joins, no timer yet
@@ -94,15 +95,20 @@ class Match:
     judge_reasoning: str
     created_at: u64
     submission_deadline: u64  # DEADLINE_UNSET until match is full/started
+    is_daily_generated: bool
 
 
 class PromptWars(gl.Contract):
     matches: TreeMap[str, Match]
     next_match_id: u64
     user_registry_address: Address
+    last_daily_generation: u64
+    daily_match_ids_json: str
 
     def __init__(self, user_registry_address: Address) -> None:
         self.next_match_id = u64(0)
+        self.last_daily_generation = u64(0)
+        self.daily_match_ids_json = "[]"
         if not isinstance(user_registry_address, Address):
             user_registry_address = Address(user_registry_address)
         self.user_registry_address = user_registry_address
@@ -141,6 +147,7 @@ class PromptWars(gl.Contract):
             judge_reasoning=match.judge_reasoning,
             created_at=match.created_at,
             submission_deadline=u64(now + 300),
+            is_daily_generated=match.is_daily_generated,
         ))
 
     # ── write methods ─────────────────────────────────────────────────────────
@@ -174,6 +181,7 @@ class PromptWars(gl.Contract):
             judge_reasoning="",
             created_at=u64(now),
             submission_deadline=DEADLINE_UNSET,
+            is_daily_generated=False,
         ))
         self.next_match_id = u64(int(match_id) + 1)
         return match_id
@@ -213,6 +221,7 @@ class PromptWars(gl.Contract):
             judge_reasoning=match.judge_reasoning,
             created_at=match.created_at,
             submission_deadline=match.submission_deadline,
+            is_daily_generated=match.is_daily_generated,
         ))
 
     @gl.public.write
@@ -274,6 +283,7 @@ class PromptWars(gl.Contract):
             judge_reasoning=match.judge_reasoning,
             created_at=match.created_at,
             submission_deadline=match.submission_deadline,
+            is_daily_generated=match.is_daily_generated,
         ))
 
     @gl.public.write
@@ -311,6 +321,7 @@ class PromptWars(gl.Contract):
                 judge_reasoning="No players submitted before the deadline. No contest — no stats recorded.",
                 created_at=match.created_at,
                 submission_deadline=match.submission_deadline,
+                is_daily_generated=match.is_daily_generated,
             ))
             return
 
@@ -331,6 +342,7 @@ class PromptWars(gl.Contract):
                 judge_reasoning="Opponent did not submit before the deadline. Win awarded by forfeit.",
                 created_at=match.created_at,
                 submission_deadline=match.submission_deadline,
+                is_daily_generated=match.is_daily_generated,
             ))
             registry = gl.get_contract_at(self.user_registry_address)
             registry.emit().record_match_batch([
@@ -422,6 +434,7 @@ Respond as JSON in exactly this format:
             judge_reasoning=reasoning,
             created_at=match.created_at,
             submission_deadline=match.submission_deadline,
+            is_daily_generated=match.is_daily_generated,
         ))
 
         registry = gl.get_contract_at(self.user_registry_address)
@@ -459,7 +472,101 @@ Respond as JSON in exactly this format:
             judge_reasoning="",
             created_at=match.created_at,
             submission_deadline=match.submission_deadline,
+            is_daily_generated=match.is_daily_generated,
         ))
+
+    @gl.public.write
+    def generate_daily_content_if_due(self) -> None:
+        now = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
+        current_day = (now // 86400) * 86400
+        last_day = (int(self.last_daily_generation) // 86400) * 86400 if int(self.last_daily_generation) > 0 else 0
+        if current_day == last_day:
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Daily content already generated today")
+        self._generate_daily_ai(now)
+
+    def _generate_daily_ai(self, now: int) -> None:
+        generation_prompt = self._build_daily_generation_prompt(now)
+
+        def leader_fn():
+            return gl.nondet.exec_prompt(generation_prompt, response_format='json')
+
+        def validator_fn(leader_result) -> bool:
+            if not isinstance(leader_result, gl.vm.Return):
+                return False
+            return self._validate_daily_batch_structure(leader_result.calldata)
+
+        batch = gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
+        self._create_daily_matches_from_batch(batch, now)
+        self.last_daily_generation = u64(now)
+
+    def _build_daily_generation_prompt(self, now: int) -> str:
+        import datetime as _dt
+        current_date_iso = _dt.datetime.fromtimestamp(now, _dt.timezone.utc).strftime("%Y-%m-%d")
+        return (
+            f"You are generating 5 creative writing prompts for a daily AI-judged tournament. "
+            f"Players will submit prompts to an AI which will produce outputs; their outputs will be ranked by a judge AI.\n\n"
+            f"Generate 5 diverse, well-defined target tasks that:\n"
+            f"- Have a clear creative goal (haiku, micro-story, song lyric, witty caption, philosophical reflection, etc.)\n"
+            f"- Can be judged on quality and execution, not factual correctness\n"
+            f"- Reward thoughtful prompt engineering and creativity\n"
+            f"- Vary in mood: some playful, some serious, some constraint-based\n"
+            f"- Are concise (1-3 sentences each, 60-200 characters)\n\n"
+            f"Today is {current_date_iso}. Make prompts feel fresh if appropriate, but timeless prompts are also fine.\n\n"
+            f"CRITICAL: Output is consumed by a game contract. Generated content will be displayed to real users "
+            f"and used as the basis for AI judging. Do not include instructions, examples, or meta-commentary "
+            f"in the targets — just the target task itself.\n\n"
+            f"Respond as JSON in exactly this format:\n"
+            f'{{"targets": ['
+            f'{{"target": "Write a haiku about Monday mornings", "max_players": 8, "duration_hours": 12}},'
+            f'{{"target": "Compose a 50-word micro-story that ends with a twist", "max_players": 12, "duration_hours": 24}}'
+            f']}}\n\n'
+            f"Constraints per target:\n"
+            f"- max_players: integer between 4 and 20\n"
+            f"- duration_hours: integer between 6 and 48 (how long the match stays open for submissions)\n"
+            f"- Exactly 5 entries in the targets array"
+        )
+
+    def _validate_daily_batch_structure(self, data: dict) -> bool:
+        targets = data.get("targets", [])
+        if len(targets) != 5:
+            return False
+        for t in targets:
+            if not isinstance(t.get("target"), str) or len(t["target"]) < 10:
+                return False
+            mp = t.get("max_players", 0)
+            dh = t.get("duration_hours", 0)
+            if not (4 <= int(mp) <= 20):
+                return False
+            if not (6 <= int(dh) <= 48):
+                return False
+        return True
+
+    def _create_daily_matches_from_batch(self, batch: dict, now: int) -> None:
+        targets = batch.get("targets", [])
+        new_ids = []
+        for item in targets:
+            target_text = str(item["target"])[:300]
+            max_players = max(4, min(20, int(item.get("max_players", 8))))
+            duration_hours = max(6, min(48, int(item.get("duration_hours", 12))))
+            deadline = u64(now + duration_hours * 3600)
+            match_id = self.next_match_id
+            self._save_match(match_id, Match(
+                id=match_id,
+                target_text=target_text,
+                max_players=u32(max_players),
+                players_json="[]",
+                prompts_json="[]",
+                outputs_json="[]",
+                ranking_json="[]",
+                state=STATE_FULL,
+                judge_reasoning="",
+                created_at=u64(now),
+                submission_deadline=deadline,
+                is_daily_generated=True,
+            ))
+            self.next_match_id = u64(int(match_id) + 1)
+            new_ids.append(int(match_id))
+        self.daily_match_ids_json = _json.dumps(new_ids)
 
     # ── view methods ──────────────────────────────────────────────────────────
 
@@ -490,3 +597,12 @@ Respond as JSON in exactly this format:
             if self._index_of(players, player) >= 0:
                 result.append(u64(i))
         return result
+
+    @gl.public.view
+    def get_daily_match_ids(self) -> list[u64]:
+        ids = _json.loads(self.daily_match_ids_json) if self.daily_match_ids_json and self.daily_match_ids_json != "[]" else []
+        return [u64(x) for x in ids]
+
+    @gl.public.view
+    def get_last_daily_generation(self) -> u64:
+        return self.last_daily_generation

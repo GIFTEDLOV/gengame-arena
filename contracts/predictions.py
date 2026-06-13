@@ -72,14 +72,14 @@ class Predictions(gl.Contract):
     resolved_ids_json: str # JSON [int, ...] — IDs of RESOLVED markets
     user_registry_address: Address
     last_daily_generation: u64
-    daily_market_ids_json: str
+    daily_match_ids_json: str
 
     def __init__(self, user_registry_address: Address) -> None:
         self.next_market_id = u64(0)
         self.open_ids_json = "[]"
         self.resolved_ids_json = "[]"
         self.last_daily_generation = u64(0)
-        self.daily_market_ids_json = "[]"
+        self.daily_match_ids_json = "[]"
         if not isinstance(user_registry_address, Address):
             user_registry_address = Address(user_registry_address)
         self.user_registry_address = user_registry_address
@@ -541,7 +541,7 @@ Respond as JSON in exactly this format:
             self.next_market_id = u64(int(market_id) + 1)
             self.open_ids_json = self._add_to_list(self.open_ids_json, market_id)
             new_ids.append(int(market_id))
-        self.daily_market_ids_json = _json.dumps(new_ids)
+        self.daily_match_ids_json = _json.dumps(new_ids)
 
     # ── view methods ──────────────────────────────────────────────────────────
 
@@ -580,8 +580,8 @@ Respond as JSON in exactly this format:
         return result
 
     @gl.public.view
-    def get_daily_market_ids(self) -> list[u64]:
-        ids = _from_json(self.daily_market_ids_json) if self.daily_market_ids_json and self.daily_market_ids_json != "[]" else []
+    def get_daily_match_ids(self) -> list[u64]:
+        ids = _from_json(self.daily_match_ids_json) if self.daily_match_ids_json and self.daily_match_ids_json != "[]" else []
         return [u64(x) for x in ids]
 
     @gl.public.view

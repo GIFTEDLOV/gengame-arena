@@ -606,7 +606,7 @@ def test_generate_daily_content_first_time_succeeds(contract, direct_vm):
     direct_vm.sender = ALICE_ADDR
     direct_vm.mock_llm(".*", DAILY_MARKETS_RESPONSE)
     contract.generate_daily_content_if_due()
-    ids = [int(x) for x in contract.get_daily_market_ids()]
+    ids = [int(x) for x in contract.get_daily_match_ids()]
     assert len(ids) == 5
     for mid in ids:
         m = contract.get_market(mid)
@@ -628,7 +628,7 @@ def test_generate_daily_content_next_day_succeeds(contract, direct_vm):
     contract.generate_daily_content_if_due()
     direct_vm.warp((datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=25)).isoformat())
     contract.generate_daily_content_if_due()
-    ids = [int(x) for x in contract.get_daily_market_ids()]
+    ids = [int(x) for x in contract.get_daily_match_ids()]
     assert len(ids) == 5
 
 
@@ -640,6 +640,6 @@ def test_daily_markets_have_correct_flag(contract, direct_vm):
     assert m_regular.is_daily_generated is False
     direct_vm.mock_llm(".*", DAILY_MARKETS_RESPONSE)
     contract.generate_daily_content_if_due()
-    for mid in [int(x) for x in contract.get_daily_market_ids()]:
+    for mid in [int(x) for x in contract.get_daily_match_ids()]:
         m = contract.get_market(mid)
         assert m.is_daily_generated is True

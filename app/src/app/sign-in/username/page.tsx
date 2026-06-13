@@ -7,7 +7,7 @@ import { useActiveWallet } from "@/lib/useActiveWallet";
 
 async function pollForProfile(
   address: string,
-  maxAttempts = 15,
+  maxAttempts = 45,
   intervalMs = 2000
 ): Promise<{ username: string } | null> {
   for (let i = 0; i < maxAttempts; i++) {
@@ -52,12 +52,15 @@ export default function UsernamePage() {
     setLoading(true);
     try {
       await registerUser(username, wallet);
-      setStatusMessage("Setting up your profile…");
+      setStatusMessage("Finalizing on-chain…");
       const profile = await pollForProfile(wallet.address);
       if (profile) {
         router.push("/dashboard");
       } else {
-        setError("Registration succeeded but profile is taking longer than expected. Please refresh the page in a moment.");
+        setError(
+          "Your registration is on-chain but the profile read is still settling. " +
+            "This is rare. Refresh the page in 30 seconds and you should be able to continue."
+        );
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -85,10 +88,15 @@ export default function UsernamePage() {
         />
         {error && <p className="text-sm text-red-400">{error}</p>}
         {statusMessage && (
-          <p className="text-sm text-indigo-300 flex items-center gap-2">
-            <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
-            {statusMessage}
-          </p>
+          <div className="flex flex-col items-center gap-2 py-1">
+            <div className="flex items-center gap-2">
+              <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
+              <p className="text-sm text-[var(--text-primary)]">{statusMessage}</p>
+            </div>
+            <p className="text-xs text-[var(--text-secondary)] text-center">
+              This usually takes 30–60 seconds. We&apos;re waiting for GenLayer validators to reach consensus.
+            </p>
+          </div>
         )}
         <button
           type="submit"

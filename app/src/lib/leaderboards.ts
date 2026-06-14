@@ -1,5 +1,4 @@
 import {
-  getGenlayerClient,
   getUserProfile,
   getRecentMatches,
   getResolvedMarkets,
@@ -7,15 +6,11 @@ import {
   getTriviaMatch,
   getJudgedTitleMatches,
   getTitleMatch,
-  TRIVIA_ROYALE_ADDRESS,
   STATE_JUDGED,
   PRED_STATE_RESOLVED,
   TRIVIA_STATE_ENDED,
   TITLE_STATE_JUDGED,
 } from "./genlayer";
-
-type GLAddress = `0x${string}` & { length: 42 };
-const glAddr = (a: string) => a as GLAddress;
 
 const DAILY_SENTINEL = "0x0000000000000000000000000000000000da17a1";
 const ZERO_ADDR = "0x" + "0".repeat(40);
@@ -103,19 +98,20 @@ async function getTriviaEndedMatches(maxId: number) {
   );
 }
 
-// Read the current next_match_id from TriviaRoyale so we know how far to scan
+// Probe getTriviaMatch(id) sequentially until we hit a non-existent ID.
+// TriviaRoyale doesn't expose get_next_match_id (unlike TitleWars), so we
+// can't ask the contract — we scan until null instead.
 async function getTriviaNextMatchId(): Promise<number> {
-  const client = getGenlayerClient();
-  try {
-    const result = await client.readContract({
-      address: glAddr(TRIVIA_ROYALE_ADDRESS),
-      functionName: "get_next_match_id",
-      args: [],
-    });
-    return Number(result as bigint);
-  } catch {
-    return 50; // safe fallback: scan up to 50
+  const MAX_PROBE = 200;
+  for (let id = 0; id < MAX_PROBE; id++) {
+    try {
+      const match = await getTriviaMatch(id);
+      if (!match || !match.host_str) return id;
+    } catch {
+      return id;
+    }
   }
+  return MAX_PROBE;
 }
 
 // ── Public leaderboard functions ──────────────────────────────────────────────

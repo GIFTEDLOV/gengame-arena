@@ -11,18 +11,18 @@ function glAddr(a: string): GLAddress {
 
 export const USER_REGISTRY_ADDRESS =
   process.env.NEXT_PUBLIC_USER_REGISTRY_ADDRESS ??
-  "0x8704aBA88217a076292bd2Fd3945eb49E4Fc2448";
+  "0x42fCFf2df6FFE90dF487FF8Be1724135d465755F";
 
 export const PROMPT_WARS_ADDRESS =
   process.env.NEXT_PUBLIC_PROMPT_WARS_ADDRESS ??
-  "0xd7ac318BB3d13E31C1b5CeDAbEe9316830a9b414";
+  "0x2434A49958176eEdC5d2Fb634eCB500B3278eC57";
 
 export const PREDICTIONS_ADDRESS =
   process.env.NEXT_PUBLIC_PREDICTIONS_ADDRESS ??
-  "0x2A28b73bBB54CD316a2275950CEF14dBB1422371";
+  "0x6682d4059b789145A4B1C40D51A0011867eB3d50";
 
 const RPC_URL =
-  process.env.NEXT_PUBLIC_GENLAYER_RPC ?? "http://localhost:4000/api";
+  process.env.NEXT_PUBLIC_GENLAYER_RPC ?? "https://rpc-bradbury.genlayer.com";
 
 // Pass a dummy account object so isAddress=false and eth_call routes to
 // GenLayer RPC instead of window.ethereum (which may be undefined).
@@ -100,7 +100,7 @@ async function clientFromWallet(wallet: NonNullable<ActiveWallet>) {
         ? (typeof args.nonce === "string" ? parseInt(args.nonce, 16) : args.nonce)
         : args.nonce;
     return origPrepare({
-      chainId: 61999,
+      chainId: 4221,
       gas: BigInt(30_000_000),
       gasPrice: BigInt(0),
       ...args,
@@ -648,7 +648,7 @@ export async function cancelMarketPredictions(
 
 export const TRIVIA_ROYALE_ADDRESS =
   process.env.NEXT_PUBLIC_TRIVIA_ROYALE_ADDRESS ??
-  "0x4F91ca3B8d62eFec3Fb6213fAd387fe6aAEB062d";
+  "0x92493FDA93ECF475ba5f9Ece1FBE8CE514Aca3DA";
 
 export const TRIVIA_STATE_WAITING     = 0;
 export const TRIVIA_STATE_GENERATING  = 1;
@@ -894,7 +894,7 @@ export async function resolveTriviaRound(
 
 export const TITLE_WARS_ADDRESS =
   process.env.NEXT_PUBLIC_TITLE_WARS_ADDRESS ??
-  "0x0ff3657501bd24014cB04924A6e53E17fD3aDa5a";
+  "0xA25EF9797a273021756A93EE77F6456aa4a94Bb8";
 
 export const TITLE_STATE_WAITING   = 0;  // lobby, accepting joins
 export const TITLE_STATE_REJECTED  = 1;  // excerpt failed verifiability

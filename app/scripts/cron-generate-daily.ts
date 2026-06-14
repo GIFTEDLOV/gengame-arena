@@ -56,7 +56,7 @@ async function buildClient() {
         ? (typeof args.nonce === "string" ? parseInt(args.nonce, 16) : args.nonce)
         : args.nonce;
     return origPrepare({
-      chainId: 61999,
+      chainId: 4221,
       gas: BigInt(30_000_000),
       gasPrice: BigInt(0),
       ...args,

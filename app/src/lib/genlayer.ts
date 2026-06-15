@@ -195,6 +195,20 @@ export async function registerUser(username: string, wallet: ActiveWallet): Prom
   return hash as TxHash;
 }
 
+export async function updateUsername(newUsername: string, wallet: ActiveWallet): Promise<TxHash> {
+  if (!wallet) throw new Error("No wallet found");
+  const client = await clientFromWallet(wallet);
+  const hash = await client.writeContract({
+    address: glAddr(USER_REGISTRY_ADDRESS),
+    functionName: "update_username",
+    args: [newUsername],
+    value: BigInt(0),
+  });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await client.waitForTransactionReceipt({ hash, status: "ACCEPTED" as any, retries: 60 });
+  return hash as TxHash;
+}
+
 // ── Prompt Wars helpers ────────────────────────────────────────────────────
 
 export async function createPromptWarsMatch(

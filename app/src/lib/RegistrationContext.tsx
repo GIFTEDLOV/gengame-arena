@@ -17,12 +17,14 @@ interface RegistrationContextValue {
   isRegistered: boolean | null; // null = loading
   username: string | null;
   requireRegistration: () => Promise<boolean>;
+  refreshUsername: () => Promise<void>;
 }
 
 const defaultValue: RegistrationContextValue = {
   isRegistered: null,
   username: null,
   requireRegistration: async () => true,
+  refreshUsername: async () => {},
 };
 
 const RegistrationContext = createContext<RegistrationContextValue>(defaultValue);
@@ -62,6 +64,19 @@ export function RegistrationProvider({ children }: { children: ReactNode }) {
       });
   }, [wallet?.address, ready]);
 
+  const refreshUsername = useCallback(async (): Promise<void> => {
+    if (!wallet?.address) return;
+    try {
+      const profile = await getUserProfile(wallet.address);
+      if (profile && profile.username) {
+        setIsRegistered(true);
+        setUsername(String(profile.username));
+      }
+    } catch {
+      // silent
+    }
+  }, [wallet?.address]);
+
   const requireRegistration = useCallback((): Promise<boolean> => {
     if (isRegistered === true) return Promise.resolve(true);
     return new Promise<boolean>((resolve) => {
@@ -85,7 +100,7 @@ export function RegistrationProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <RegistrationContext.Provider value={{ isRegistered, username, requireRegistration }}>
+    <RegistrationContext.Provider value={{ isRegistered, username, requireRegistration, refreshUsername }}>
       {children}
       {showModal && (
         <RegisterModal wallet={wallet} onSuccess={handleSuccess} onClose={handleClose} />

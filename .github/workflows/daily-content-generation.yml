@@ -21,7 +21,7 @@ jobs:
       - name: Install dependencies
         run: |
           cd app
-          npm ci
+          npm ci --omit=optional
 
       - name: Generate daily content on all 4 contracts
         env:

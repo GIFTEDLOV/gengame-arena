@@ -16,10 +16,10 @@ import {
 } from "@/lib/genlayer";
 import { useActiveWallet } from "@/lib/useActiveWallet";
 import { useRegistration } from "@/lib/RegistrationContext";
-import {
-  getLastDailyGeneration,
-  triggerAllDailyContent,
-} from "@/lib/dailyContentTrigger";
+// Daily content is triggered by GitHub Actions cron (currently deferred) or manually via
+// npx tsx scripts/cron-generate-daily.ts. Browser-side trigger removed because users
+// don't have permission/funds to call it.
+// import { getLastDailyGeneration, triggerAllDailyContent } from "@/lib/dailyContentTrigger";
 import WalletStatusBar from "@/components/shell/WalletStatusBar";
 
 const privyAppId = process.env.NEXT_PUBLIC_PRIVY_APP_ID;
@@ -313,20 +313,6 @@ function DashboardContentBody({ privyReady, authenticated, user }: PrivySnapshot
       setCounts((c) => ({ ...c, "prompt-wars": open }));
     }).catch(() => {});
 
-    // Opportunistic daily-content trigger: read last generation timestamps then fire if needed
-    Promise.all([
-      getLastDailyGeneration("prompt-wars"),
-      getLastDailyGeneration("predictions"),
-      getLastDailyGeneration("trivia-royale"),
-      getLastDailyGeneration("title-wars"),
-    ]).then(([pw, pred, trivia, tw]) => {
-      triggerAllDailyContent(wallet, {
-        "prompt-wars":  pw,
-        "predictions":  pred,
-        "trivia-royale": trivia,
-        "title-wars":   tw,
-      }).catch(() => {});
-    }).catch(() => {});
   }, [wallet]);
 
   useEffect(() => {

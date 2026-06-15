@@ -1,9 +1,12 @@
 name: Daily AI Content Generation
 
+# Daily content cron currently triggered manually or via frontend opportunistic trigger.
+# GitHub Actions schedule disabled pending npm lock file sync resolution.
+# To re-enable: uncomment the `schedule:` block below, ensure CI can install deps.
 on:
-  schedule:
-    - cron: '0 13 * * *'  # 1pm UTC daily
-  workflow_dispatch:  # Allow manual trigger for testing
+  # schedule:
+  #   - cron: '0 13 * * *'  # 1pm UTC daily — disabled until npm CI sync is resolved
+  workflow_dispatch:
 
 jobs:
   generate-daily-content:

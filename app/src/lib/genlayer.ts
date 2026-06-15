@@ -1,4 +1,5 @@
 import { createClient } from "genlayer-js";
+import { testnetBradbury } from "genlayer-js/chains";
 import { toAccount } from "viem/accounts";
 import type { ActiveWallet } from "./useActiveWallet";
 
@@ -84,11 +85,7 @@ async function clientFromWallet(wallet: NonNullable<ActiveWallet>) {
       throw new Error("signTypedData not needed for GenLayer");
     },
   });
-  const client = createClient({ endpoint: RPC_URL, account });
-
-  // FIX 1 — await ConsensusMain init (race condition: createClient fires this async)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (client as any).initializeConsensusSmartContract();
+  const client = createClient({ chain: testnetBradbury, endpoint: RPC_URL, account });
 
   // FIX 3 — pre-fill tx params so viem never calls eth_fillTransaction (unsupported by Studio)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

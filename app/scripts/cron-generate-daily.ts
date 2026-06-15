@@ -102,16 +102,20 @@ async function generateForContract(
 async function main() {
   const client = await buildClient();
 
-  const results = await Promise.allSettled([
-    generateForContract(client, "PromptWars", contracts.promptWars!),
-    generateForContract(client, "Predictions", contracts.predictions!),
-    generateForContract(client, "TriviaRoyale", contracts.triviaRoyale!),
-    generateForContract(client, "TitleWars", contracts.titleWars!),
-  ]);
+  const targets: Array<{ name: string; address: string }> = [
+    { name: "PromptWars", address: contracts.promptWars! },
+    { name: "Predictions", address: contracts.predictions! },
+    { name: "TriviaRoyale", address: contracts.triviaRoyale! },
+    { name: "TitleWars", address: contracts.titleWars! },
+  ];
 
-  const summary = results.map((r) =>
-    r.status === "fulfilled" ? r.value : { name: "unknown", status: "failed", error: String(r.reason) }
-  );
+  const summary: GenerateResult[] = [];
+  for (const target of targets) {
+    const result = await generateForContract(client, target.name, target.address);
+    summary.push(result);
+    // Brief breath between contracts so nonce/state settles cleanly
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
 
   console.log("Daily generation summary:", JSON.stringify(summary, null, 2));
 

@@ -349,6 +349,7 @@ export default function PredictionsPage() {
                   disabled={question.trim().length < 10}
                   className="rounded-lg px-6 py-2 font-semibold hover:opacity-90 disabled:opacity-50 text-[#0a0a0f] bg-[var(--game-predictions)]"
                   pendingLabel="Creating market (AI verifying…)"
+                  pendingHint="GenLayer validators are reaching consensus (~30-90s)."
                   description="Creating prediction market"
                 >
                   Create Market

@@ -261,6 +261,7 @@ export default function TriviaRoyalePage() {
                   disabled={topic.trim().length < 3}
                   className="rounded-lg px-6 py-2 font-semibold hover:opacity-90 disabled:opacity-50 text-white bg-[var(--game-trivia)]"
                   pendingLabel="Creating match (AI verifying topic…)"
+                  pendingHint="GenLayer validators are reaching consensus (~30-90s)."
                   description="Creating Trivia Royale match"
                 >
                   Create Match

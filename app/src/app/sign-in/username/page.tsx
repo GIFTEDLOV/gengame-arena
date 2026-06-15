@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { registerUser, getUserProfile } from "@/lib/genlayer";
 import { useActiveWallet } from "@/lib/useActiveWallet";
+import { friendlyError, type FriendlyError } from "@/lib/errorMessages";
 
 async function pollForProfile(
   address: string,
@@ -26,26 +27,26 @@ export default function UsernamePage() {
   const router = useRouter();
   const { wallet, ready } = useActiveWallet();
   const [username, setUsername] = useState("");
-  const [error, setError] = useState("");
+  const [error, setError] = useState<FriendlyError | null>(null);
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError("");
+    setError(null);
     setStatusMessage("");
 
     if (username.length < 3 || username.length > 20) {
-      setError("Username must be between 3 and 20 characters.");
+      setError({ title: "Invalid username", message: "Username must be between 3 and 20 characters." });
       return;
     }
     if (!/^[a-zA-Z0-9_]+$/.test(username)) {
-      setError("Username may only contain letters, numbers, and underscores.");
+      setError({ title: "Invalid username", message: "Username may only contain letters, numbers, and underscores." });
       return;
     }
 
     if (!wallet) {
-      setError("No wallet found. Please sign in again.");
+      setError({ title: "No wallet", message: "No wallet found. Please sign in again." });
       return;
     }
 
@@ -57,14 +58,19 @@ export default function UsernamePage() {
       if (profile) {
         router.push("/dashboard");
       } else {
-        setError(
-          "Your registration is on-chain but the profile read is still settling. " +
-            "This is rare. Refresh the page in 30 seconds and you should be able to continue."
-        );
+        setError({
+          title: "Registration settling",
+          message: "Your registration is on-chain but still finalizing. Refresh in 30 seconds to continue.",
+        });
       }
     } catch (err: unknown) {
+      console.error("Registration failed:", err);
       const msg = err instanceof Error ? err.message : String(err);
-      setError(msg.includes("taken") ? "Username already taken." : `Registration failed: ${msg}`);
+      if (msg.toLowerCase().includes("taken")) {
+        setError({ title: "Username taken", message: "That username is already registered. Try a different one." });
+      } else {
+        setError(friendlyError(err));
+      }
     } finally {
       setLoading(false);
       setStatusMessage("");
@@ -86,7 +92,23 @@ export default function UsernamePage() {
           disabled={loading}
           className="rounded-lg border border-gray-600 bg-gray-900 px-4 py-3 text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none disabled:opacity-60"
         />
-        {error && <p className="text-sm text-red-400">{error}</p>}
+        {error && (
+          <div>
+            <p className="text-sm font-medium" style={{ color: "var(--danger, #f87171)" }}>{error.title}</p>
+            <p className="text-sm mt-0.5 text-gray-400">{error.message}</p>
+            {error.cta && (
+              <a
+                href={error.cta.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-1 inline-block text-sm underline"
+                style={{ color: "var(--accent-platform-hi, #a78bfa)" }}
+              >
+                {error.cta.label} →
+              </a>
+            )}
+          </div>
+        )}
         {statusMessage && (
           <div className="flex flex-col items-center gap-2 py-1">
             <div className="flex items-center gap-2">

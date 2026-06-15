@@ -240,6 +240,7 @@ export default function PromptWarsPage() {
                         disabled={!ready}
                         className="flex-1 rounded-lg px-4 py-2 font-semibold hover:opacity-90 disabled:opacity-50 text-[#0a0a0f] bg-[var(--game-prompt-wars)]"
                         pendingLabel="Creating…"
+                        pendingHint="GenLayer validators are reaching consensus (~30-90s)."
                         description="Creating Prompt Wars match"
                       >
                         Create

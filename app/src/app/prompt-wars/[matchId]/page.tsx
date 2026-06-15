@@ -2,6 +2,7 @@
 
 import AuthGuard from "@/components/AuthGuard";
 import TxButton from "@/components/TxButton";
+import MatchSettlingState from "@/components/MatchSettlingState";
 import JudgeReasoning from "@/components/shared/JudgeReasoning";
 import Link from "next/link";
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -75,6 +76,7 @@ export default function MatchPage() {
   const [shimmer, setShimmer] = useState(false);
   const prevStateRef = useRef<number>(-1);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const mountedAt = useRef<number>(Date.now());
 
   const fetchMatch = useCallback(async () => {
     const m = await getMatch(matchIdNum);
@@ -156,6 +158,13 @@ export default function MatchPage() {
   }
 
   if (!match) {
+    if ((Date.now() - mountedAt.current) / 1000 < 120) {
+      return (
+        <AuthGuard>
+          <MatchSettlingState accent="var(--game-prompt-wars)" backHref="/prompt-wars" backLabel="← Lobby" />
+        </AuthGuard>
+      );
+    }
     return (
       <AuthGuard>
         <main className="flex min-h-screen flex-col items-center justify-center gap-4 p-8">

@@ -2,6 +2,7 @@
 
 import AuthGuard from "@/components/AuthGuard";
 import TxButton from "@/components/TxButton";
+import MatchSettlingState from "@/components/MatchSettlingState";
 import JudgeReasoning from "@/components/shared/JudgeReasoning";
 import Link from "next/link";
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -125,6 +126,7 @@ export default function TitleMatchPage() {
   const [titleInput, setTitleInput] = useState("");
   const [submittedThisSession, setSubmittedThisSession] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const mountedAt = useRef<number>(Date.now());
 
   const fetchMatch = useCallback(async () => {
     const m = await getTitleMatch(matchIdNum);
@@ -178,6 +180,13 @@ export default function TitleMatchPage() {
   }
 
   if (!match) {
+    if ((Date.now() - mountedAt.current) / 1000 < 120) {
+      return (
+        <AuthGuard>
+          <MatchSettlingState accent={accent} backHref="/title-wars" backLabel="← Back to lobby" />
+        </AuthGuard>
+      );
+    }
     return (
       <AuthGuard>
         <main className="flex min-h-screen flex-col items-center justify-center gap-4">

@@ -9,6 +9,7 @@ interface TxButtonProps {
   className?: string;
   children: ReactNode;
   pendingLabel?: string;
+  pendingHint?: string;      // small sub-text shown below the button while pending
   description?: string;      // shown in the settling indicator tooltip
   onOptimistic?: () => void; // called immediately when clicked (before tx)
   onRevert?: () => void;     // called if the tx fails
@@ -20,6 +21,7 @@ export default function TxButton({
   className = "",
   children,
   pendingLabel = "Awaiting validator consensus…",
+  pendingHint,
   description = "Transaction",
   onOptimistic,
   onRevert,
@@ -53,7 +55,7 @@ export default function TxButton({
   const isDone = status === "done";
 
   return (
-    <div>
+    <div className="w-full">
       <button
         onClick={handle}
         disabled={disabled || isPending}
@@ -89,6 +91,11 @@ export default function TxButton({
           children
         )}
       </button>
+      {isPending && pendingHint && (
+        <p className="mt-1 text-xs" style={{ color: "var(--text-tertiary)" }}>
+          {pendingHint}
+        </p>
+      )}
       {error && (
         <div className="mt-2">
           <p className="text-sm font-medium" style={{ color: "var(--danger, #f87171)" }}>

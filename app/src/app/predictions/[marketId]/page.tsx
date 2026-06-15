@@ -2,6 +2,7 @@
 
 import AuthGuard from "@/components/AuthGuard";
 import TxButton from "@/components/TxButton";
+import MatchSettlingState from "@/components/MatchSettlingState";
 import JudgeReasoning from "@/components/shared/JudgeReasoning";
 import Link from "next/link";
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -64,6 +65,7 @@ export default function MarketPage() {
   const [numericInput, setNumericInput] = useState("");
   const [playerUsernames, setPlayerUsernames] = useState<Record<string, string>>({});
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const mountedAt = useRef<number>(Date.now());
 
   const fetchMarket = useCallback(async () => {
     const m = await getMarket(marketIdNum);
@@ -134,6 +136,13 @@ export default function MarketPage() {
   }
 
   if (!market) {
+    if ((Date.now() - mountedAt.current) / 1000 < 120) {
+      return (
+        <AuthGuard>
+          <MatchSettlingState accent="var(--game-predictions)" backHref="/predictions" backLabel="← Lobby" />
+        </AuthGuard>
+      );
+    }
     return (
       <AuthGuard>
         <main className="flex min-h-screen flex-col items-center justify-center gap-4 p-8">

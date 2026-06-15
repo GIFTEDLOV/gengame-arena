@@ -1,6 +1,7 @@
 "use client";
 import { useState, type ReactNode } from "react";
 import { useSettling } from "@/lib/settling";
+import { friendlyError, type FriendlyError } from "@/lib/errorMessages";
 
 interface TxButtonProps {
   onClick: () => Promise<void>;
@@ -24,14 +25,14 @@ export default function TxButton({
   onRevert,
 }: TxButtonProps) {
   const [status, setStatus] = useState<"idle" | "pending" | "done">("idle");
-  const [error, setError] = useState("");
+  const [error, setError] = useState<FriendlyError | null>(null);
   const { addTx, removeTx } = useSettling();
 
   async function handle() {
     if (status === "pending") return;
     const txId = `tx-${Date.now()}-${Math.random()}`;
     setStatus("pending");
-    setError("");
+    setError(null);
     onOptimistic?.();
     addTx(txId, description);
     try {
@@ -40,7 +41,8 @@ export default function TxButton({
       removeTx(txId);
       setTimeout(() => setStatus("idle"), 2000);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      console.error(e);
+      setError(friendlyError(e));
       setStatus("idle");
       onRevert?.();
       removeTx(txId);
@@ -87,7 +89,27 @@ export default function TxButton({
           children
         )}
       </button>
-      {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
+      {error && (
+        <div className="mt-2">
+          <p className="text-sm font-medium" style={{ color: "var(--danger, #f87171)" }}>
+            {error.title}
+          </p>
+          <p className="text-sm mt-0.5" style={{ color: "var(--text-tertiary)" }}>
+            {error.message}
+          </p>
+          {error.cta && (
+            <a
+              href={error.cta.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-1 inline-block text-sm underline"
+              style={{ color: "var(--accent-platform-hi)" }}
+            >
+              {error.cta.label} →
+            </a>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -19,6 +19,7 @@ import {
   getLastDailyGeneration,
   triggerAllDailyContent,
 } from "@/lib/dailyContentTrigger";
+import WalletStatusBar from "@/components/shell/WalletStatusBar";
 
 const privyAppId = process.env.NEXT_PUBLIC_PRIVY_APP_ID;
 const hasPrivy = !!privyAppId && privyAppId !== "your_privy_app_id_here";
@@ -375,6 +376,7 @@ function DashboardContentBody({ privyReady, authenticated, user }: PrivySnapshot
 
   return (
     <div className="mx-auto max-w-6xl px-4 sm:px-6 py-10 sm:py-14">
+      <WalletStatusBar />
       {/* Welcome header */}
       <div className="mb-10">
         <h1

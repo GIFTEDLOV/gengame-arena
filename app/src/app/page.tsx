@@ -4,9 +4,6 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import Footer from "@/components/shell/Footer";
 
-const privyAppId = process.env.NEXT_PUBLIC_PRIVY_APP_ID;
-const hasPrivy = !!privyAppId && privyAppId !== "your_privy_app_id_here";
-
 /* ── Floating particle dot ───────────────────────────────── */
 interface Particle { id: number; left: string; delay: string; duration: string; size: number; color: string; }
 const PARTICLE_COLORS = ["#8b5cf6", "#fbbf24", "#2dd4bf", "#ec4899", "#a78bfa"];

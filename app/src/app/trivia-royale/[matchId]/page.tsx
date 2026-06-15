@@ -14,7 +14,6 @@ import {
   resolveTriviaRound,
   cancelTriviaMatch,
   getUserProfile,
-  TRIVIA_STATE_WAITING,
   TRIVIA_STATE_GENERATING,
   TRIVIA_STATE_IN_PROGRESS,
   TRIVIA_STATE_RESOLVING,
@@ -315,7 +314,6 @@ export default function TriviaMatchPage() {
 
   // ── IN PROGRESS ──
   if (state === TRIVIA_STATE_IN_PROGRESS) {
-    const isUrgent = !!(deadline && (deadline - Math.floor(Date.now() / 1000)) < 15);
     return (
       <AuthGuard>
         <div className="relative min-h-screen overflow-hidden">

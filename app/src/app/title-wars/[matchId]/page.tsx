@@ -15,7 +15,6 @@ import {
   judgeTitleMatch,
   cancelTitleMatch,
   getUserProfile,
-  TITLE_STATE_WAITING,
   TITLE_STATE_REJECTED,
   TITLE_STATE_OPEN,
   TITLE_STATE_JUDGING,
@@ -416,7 +415,6 @@ export default function TitleMatchPage() {
               match={match}
               matchIdNum={matchIdNum}
               wallet={wallet}
-              currentAddr={currentAddr}
               isPlayer={isPlayer}
               deadline={deadline}
               submittedCount={submittedCount}
@@ -562,7 +560,6 @@ function OpenSubmissions({
   match,
   matchIdNum,
   wallet,
-  currentAddr,
   isPlayer,
   deadline,
   submittedCount,
@@ -577,7 +574,6 @@ function OpenSubmissions({
   match: TitleMatch;
   matchIdNum: number;
   wallet: ReturnType<typeof useActiveWallet>["wallet"];
-  currentAddr: string | null;
   isPlayer: boolean;
   deadline: number | null;
   submittedCount: number;

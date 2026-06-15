@@ -26,7 +26,6 @@ import { useActiveWallet } from "@/lib/useActiveWallet";
 import { useRegistration } from "@/lib/RegistrationContext";
 import { useAutoResolve } from "@/lib/useAutoResolve";
 
-const ZERO_ADDR = "0x" + "0".repeat(40);
 const MAX_PROMPT = 500;
 const DEADLINE_UNSET = BigInt(0);
 

@@ -1010,20 +1010,6 @@ export async function getTitleMatchesForPlayer(playerAddress: string): Promise<n
   }
 }
 
-async function getNextTitleMatchId(): Promise<number> {
-  const client = getGenlayerClient();
-  try {
-    const result = await client.readContract({
-      address: glAddr(TITLE_WARS_ADDRESS),
-      functionName: "get_next_match_id",
-      args: [],
-    });
-    return Number(result as bigint);
-  } catch {
-    return 0;
-  }
-}
-
 export async function createTitleWarsMatch(
   excerpt: string,
   maxPlayers: number,

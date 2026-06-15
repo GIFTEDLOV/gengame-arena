@@ -14,6 +14,7 @@
  */
 
 import { createClient } from "genlayer-js";
+import { testnetBradbury } from "genlayer-js/chains";
 import { privateKeyToAccount } from "viem/accounts";
 
 const rpcUrl = process.env.GENLAYER_RPC_URL;
@@ -39,7 +40,7 @@ for (const [name, addr] of Object.entries(contracts)) {
 
 async function buildClient() {
   const account = privateKeyToAccount(signerKey as `0x${string}`);
-  const client = createClient({ endpoint: rpcUrl!, account });
+  const client = createClient({ chain: testnetBradbury, endpoint: rpcUrl!, account });
 
   // Same 3 fixes as clientFromWallet in genlayer.ts
   // FIX 1 — await ConsensusMain init

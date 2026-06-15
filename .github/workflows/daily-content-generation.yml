@@ -1,9 +1,8 @@
 name: Daily AI Content Generation
 
 on:
-  # Schedule is intentionally disabled — secrets not configured until Phase 6 (Bradbury deployment)
-  # schedule:
-  #   - cron: '0 13 * * *'  # 1pm UTC daily
+  schedule:
+    - cron: '0 13 * * *'  # 1pm UTC daily
   workflow_dispatch:  # Allow manual trigger for testing
 
 jobs:

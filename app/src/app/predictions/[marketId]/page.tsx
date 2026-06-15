@@ -22,6 +22,7 @@ import {
 } from "@/lib/genlayer";
 import type { Market } from "@/lib/genlayer";
 import { useActiveWallet } from "@/lib/useActiveWallet";
+import { useRegistration } from "@/lib/RegistrationContext";
 import { useAutoResolve } from "@/lib/useAutoResolve";
 
 function useCountdown(resolutionTs: number | null): { display: string; expired: boolean; color: string } {
@@ -56,6 +57,7 @@ export default function MarketPage() {
   const { marketId } = useParams<{ marketId: string }>();
   const marketIdNum = Number(marketId);
   const { wallet } = useActiveWallet();
+  const { requireRegistration } = useRegistration();
   const currentAddr = wallet?.address?.toLowerCase() ?? null;
 
   const [market, setMarket] = useState<Market | null>(null);
@@ -339,6 +341,7 @@ export default function MarketPage() {
 
                   <TxButton
                     onClick={async () => {
+                      if (!await requireRegistration()) return;
                       if (!wallet) throw new Error("No wallet");
                       if (isBinary) {
                         if (binaryPick === null) throw new Error("Select YES or NO");

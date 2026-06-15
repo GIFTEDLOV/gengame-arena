@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { PrivyProvider } from "@privy-io/react-auth";
 import { SettlingProvider } from "@/lib/settling";
+import { RegistrationProvider } from "@/lib/RegistrationContext";
 
 function ConsoleEasterEgg() {
   useEffect(() => {
@@ -33,8 +34,10 @@ export default function Providers({ children }: { children: React.ReactNode }) {
 
   const inner = (
     <SettlingProvider>
-      <ConsoleEasterEgg />
-      {children}
+      <RegistrationProvider>
+        <ConsoleEasterEgg />
+        {children}
+      </RegistrationProvider>
     </SettlingProvider>
   );
 

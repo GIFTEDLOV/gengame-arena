@@ -17,7 +17,7 @@ export default function SignInPage() {
 
   function handleGuest() {
     getOrCreateGuestWallet();
-    router.push("/sign-in/username");
+    router.push("/dashboard");
   }
 
   return (

@@ -23,6 +23,7 @@ import {
 } from "@/lib/genlayer";
 import type { TriviaMatch, TriviaQuestion } from "@/lib/genlayer";
 import { useActiveWallet } from "@/lib/useActiveWallet";
+import { useRegistration } from "@/lib/RegistrationContext";
 import { useAutoResolve } from "@/lib/useAutoResolve";
 
 function useCountdown(deadlineUnix: number | null) {
@@ -59,6 +60,7 @@ export default function TriviaMatchPage() {
   const { matchId } = useParams<{ matchId: string }>();
   const matchIdNum = Number(matchId);
   const { wallet } = useActiveWallet();
+  const { requireRegistration } = useRegistration();
   const currentAddr = wallet?.address?.toLowerCase() ?? null;
 
   const [match, setMatch] = useState<TriviaMatch | null>(null);
@@ -510,7 +512,7 @@ export default function TriviaMatchPage() {
               <p className="text-sm" style={{ color: "var(--text-secondary)" }}>Waiting for host to start the match…</p>
             ) : playerCount < maxPlayers ? (
               <TxButton
-                onClick={async () => { await joinTriviaMatch(matchIdNum, wallet!); }}
+                onClick={async () => { if (!await requireRegistration()) return; await joinTriviaMatch(matchIdNum, wallet!); }}
                 className="rounded-lg px-6 py-2 font-semibold hover:opacity-90 text-white bg-[var(--game-trivia)]"
                 pendingLabel="Joining…"
                 description="Joining Trivia Royale match"

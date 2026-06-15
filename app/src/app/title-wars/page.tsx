@@ -21,6 +21,7 @@ import {
 } from "@/lib/genlayer";
 import type { TitleMatch } from "@/lib/genlayer";
 import { useActiveWallet } from "@/lib/useActiveWallet";
+import { useRegistration } from "@/lib/RegistrationContext";
 import { getDailyMatchIds } from "@/lib/dailyContentTrigger";
 
 const MAX_EXCERPT_CHARS = 1500;
@@ -111,6 +112,7 @@ function MatchCard({ match, hostName, isDaily }: { match: TitleMatch; hostName?:
 
 export default function TitleWarsPage() {
   const { wallet } = useActiveWallet();
+  const { requireRegistration } = useRegistration();
   const router = useRouter();
 
   const [excerpt, setExcerpt] = useState("");
@@ -154,6 +156,7 @@ export default function TitleWarsPage() {
   }, [fetchMatches]);
 
   async function handleCreate() {
+    if (!await requireRegistration()) return;
     if (!wallet) throw new Error("No wallet");
     const { matchId } = await createTitleWarsMatch(excerpt.trim(), maxPlayers, wallet);
     const m = await getTitleMatch(matchId);

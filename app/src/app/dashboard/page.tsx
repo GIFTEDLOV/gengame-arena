@@ -3,9 +3,9 @@
 import AuthGuard from "@/components/AuthGuard";
 import AppShell from "@/components/shell/AppShell";
 import { usePrivy } from "@privy-io/react-auth";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+
 import {
   getUserProfile,
   getOpenMarkets,
@@ -15,6 +15,7 @@ import {
   STATE_WAITING,
 } from "@/lib/genlayer";
 import { useActiveWallet } from "@/lib/useActiveWallet";
+import { useRegistration } from "@/lib/RegistrationContext";
 import {
   getLastDailyGeneration,
   triggerAllDailyContent,
@@ -292,10 +293,8 @@ function DashboardContentWithPrivy() {
 }
 
 function DashboardContentBody({ privyReady, authenticated, user }: PrivySnapshot) {
-  const { wallet, ready: walletReady } = useActiveWallet();
-  const router = useRouter();
-  const [guestUsername, setGuestUsername] = useState<string | null>(null);
-  const [loadingGuest, setLoadingGuest] = useState(false);
+  const { wallet } = useActiveWallet();
+  const { username } = useRegistration();
   const [profile, setProfile] = useState<{ total_matches: number; total_wins: number } | null>(null);
 
   const [counts, setCounts] = useState<Record<string, number | null>>({
@@ -331,39 +330,21 @@ function DashboardContentBody({ privyReady, authenticated, user }: PrivySnapshot
   }, [wallet]);
 
   useEffect(() => {
-    if (!walletReady || authenticated) return;
-    if (!wallet) return;
-    setLoadingGuest(true);
+    if (!wallet?.address) return;
     getUserProfile(wallet.address)
       .then((p) => {
-        if (!p) {
-          router.push("/sign-in/username");
-        } else {
-          setGuestUsername(p.username as string);
-          setProfile({ total_matches: Number(p.total_matches), total_wins: Number(p.total_wins) });
-        }
+        if (p) setProfile({ total_matches: Number(p.total_matches), total_wins: Number(p.total_wins) });
       })
-      .catch(() => router.push("/sign-in/username"))
-      .finally(() => setLoadingGuest(false));
-  }, [walletReady, authenticated, wallet, router]);
-
-  useEffect(() => {
-    if (authenticated && wallet?.address) {
-      getUserProfile(wallet.address)
-        .then((p) => {
-          if (p) setProfile({ total_matches: Number(p.total_matches), total_wins: Number(p.total_wins) });
-        })
-        .catch(() => {});
-    }
-  }, [authenticated, wallet?.address]);
+      .catch(() => {});
+  }, [wallet?.address]);
 
   const displayName = authenticated
     ? user?.github?.username
       ? `@${user.github.username}`
-      : "player"
-    : guestUsername ?? null;
+      : (username ?? "player")
+    : username ?? null;
 
-  if (!privyReady || loadingGuest) {
+  if (!privyReady) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div style={{ color: "var(--text-tertiary)" }}>Loading…</div>

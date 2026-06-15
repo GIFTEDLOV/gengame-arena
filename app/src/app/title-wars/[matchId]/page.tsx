@@ -24,6 +24,7 @@ import {
 } from "@/lib/genlayer";
 import type { TitleMatch } from "@/lib/genlayer";
 import { useActiveWallet } from "@/lib/useActiveWallet";
+import { useRegistration } from "@/lib/RegistrationContext";
 import { useAutoResolve } from "@/lib/useAutoResolve";
 
 const accent = "var(--game-title-wars)";
@@ -117,6 +118,7 @@ export default function TitleMatchPage() {
   const { matchId } = useParams<{ matchId: string }>();
   const matchIdNum = Number(matchId);
   const { wallet } = useActiveWallet();
+  const { requireRegistration } = useRegistration();
   const currentAddr = wallet?.address?.toLowerCase() ?? null;
 
   const [match, setMatch] = useState<TitleMatch | null>(null);
@@ -513,7 +515,7 @@ export default function TitleMatchPage() {
               <p className="text-sm" style={{ color: "var(--text-secondary)" }}>Waiting for host to start the match…</p>
             ) : playerCount < maxPlayers ? (
               <TxButton
-                onClick={async () => { await joinTitleWarsMatch(matchIdNum, wallet!); }}
+                onClick={async () => { if (!await requireRegistration()) return; await joinTitleWarsMatch(matchIdNum, wallet!); }}
                 className="rounded-lg px-6 py-2 font-semibold hover:opacity-90 text-[#0a0a0f] bg-[var(--game-title-wars)]"
                 pendingLabel="Joining…"
                 description="Joining Title Wars match"

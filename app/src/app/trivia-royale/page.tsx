@@ -19,6 +19,7 @@ import {
 } from "@/lib/genlayer";
 import type { TriviaMatch } from "@/lib/genlayer";
 import { useActiveWallet } from "@/lib/useActiveWallet";
+import { useRegistration } from "@/lib/RegistrationContext";
 import { getDailyMatchIds } from "@/lib/dailyContentTrigger";
 
 const MAX_TOPIC_CHARS = 80;
@@ -119,6 +120,7 @@ function MatchCard({ match, hostName, isLive, isDaily }: { match: TriviaMatch; h
 
 export default function TriviaRoyalePage() {
   const { wallet } = useActiveWallet();
+  const { requireRegistration } = useRegistration();
   const router = useRouter();
 
   const [topic, setTopic] = useState("");
@@ -162,6 +164,7 @@ export default function TriviaRoyalePage() {
   }, [fetchMatches]);
 
   async function handleCreate() {
+    if (!await requireRegistration()) return;
     if (!wallet) throw new Error("No wallet");
     const { matchId } = await createTriviaMatch(topic.trim(), maxPlayers, wallet);
     const m = await getTriviaMatch(matchId);

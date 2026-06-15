@@ -18,6 +18,7 @@ import {
 } from "@/lib/genlayer";
 import type { Match } from "@/lib/genlayer";
 import { useActiveWallet } from "@/lib/useActiveWallet";
+import { useRegistration } from "@/lib/RegistrationContext";
 import { getDailyMatchIds } from "@/lib/dailyContentTrigger";
 
 const ZERO_ADDR = "0x" + "0".repeat(40);
@@ -149,6 +150,7 @@ function SectionHeader({ title, count, accent }: { title: string; count: number;
 export default function PromptWarsPage() {
   const router = useRouter();
   const { wallet, ready } = useActiveWallet();
+  const { requireRegistration } = useRegistration();
   const [showModal, setShowModal] = useState(false);
   const [maxPlayers, setMaxPlayers] = useState(50);
   const [joinId, setJoinId] = useState("");
@@ -177,6 +179,7 @@ export default function PromptWarsPage() {
   }, [wallet?.address]);
 
   async function handleCreate() {
+    if (!await requireRegistration()) return;
     if (!wallet) throw new Error("No wallet found. Please sign in first.");
     const cap = Math.min(50, Math.max(2, maxPlayers));
     const { matchId } = await createPromptWarsMatch(wallet, cap);

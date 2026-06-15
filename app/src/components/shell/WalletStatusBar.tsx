@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useActiveWallet } from "@/lib/useActiveWallet";
+import { useRegistration } from "@/lib/RegistrationContext";
 import Card from "@/components/shell/Card";
 
 const RPC_URL = process.env.NEXT_PUBLIC_GENLAYER_RPC ?? "https://rpc-bradbury.genlayer.com";
@@ -34,6 +35,7 @@ function formatGen(wei: bigint): string {
 
 export default function WalletStatusBar() {
   const { wallet, ready } = useActiveWallet();
+  const { isRegistered } = useRegistration();
   const [balance, setBalance] = useState<bigint | null>(null);
   const [fetching, setFetching] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -151,52 +153,58 @@ export default function WalletStatusBar() {
         </div>
       </div>
 
-      {/* Faucet CTA — only shown when balance has loaded and is 0 */}
+      {/* Zero-balance messaging — soft for unregistered, urgent for registered */}
       {balance !== null && !hasBalance && (
-        <div
-          className="mt-3 rounded-md p-3"
-          style={{
-            backgroundColor: "rgba(251,191,36,0.08)",
-            border: "1px solid rgba(251,191,36,0.25)",
-          }}
-        >
-          <p className="text-sm mb-2" style={{ color: "#fbbf24" }}>
-            ⚠ Your wallet needs testnet GEN to play.
+        isRegistered === false ? (
+          <p className="mt-3 text-sm" style={{ color: "var(--text-tertiary)" }}>
+            Browse freely — funding is only needed when you create or join a match.
           </p>
-          <div className="flex flex-col sm:flex-row gap-2">
-            <button
-              onClick={openFaucet}
-              className="text-sm font-semibold px-4 py-2 rounded transition-all"
-              style={{
-                backgroundColor: "var(--accent-platform)",
-                color: "#fff",
-                border: "none",
-                cursor: "pointer",
-                borderRadius: "var(--radius)",
-              }}
-            >
-              Get free testnet GEN →
-            </button>
-            <button
-              onClick={() => refreshBalance(true)}
-              className="text-sm px-3 py-2 rounded transition-all"
-              style={{
-                color: "var(--text-tertiary)",
-                border: "1px solid var(--border)",
-                backgroundColor: "transparent",
-                cursor: "pointer",
-                borderRadius: "var(--radius)",
-              }}
-            >
-              I funded my wallet
-            </button>
-          </div>
-          {faucetTip && (
-            <p className="text-xs mt-2" style={{ color: "var(--text-tertiary)" }}>
-              Your address was copied. Paste it into the faucet form. Tokens typically arrive in 30–90 seconds.
+        ) : (
+          <div
+            className="mt-3 rounded-md p-3"
+            style={{
+              backgroundColor: "rgba(251,191,36,0.08)",
+              border: "1px solid rgba(251,191,36,0.25)",
+            }}
+          >
+            <p className="text-sm mb-2" style={{ color: "#fbbf24" }}>
+              ⚠ Your wallet needs testnet GEN to play.
             </p>
-          )}
-        </div>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <button
+                onClick={openFaucet}
+                className="text-sm font-semibold px-4 py-2 rounded transition-all"
+                style={{
+                  backgroundColor: "var(--accent-platform)",
+                  color: "#fff",
+                  border: "none",
+                  cursor: "pointer",
+                  borderRadius: "var(--radius)",
+                }}
+              >
+                Get free testnet GEN →
+              </button>
+              <button
+                onClick={() => refreshBalance(true)}
+                className="text-sm px-3 py-2 rounded transition-all"
+                style={{
+                  color: "var(--text-tertiary)",
+                  border: "1px solid var(--border)",
+                  backgroundColor: "transparent",
+                  cursor: "pointer",
+                  borderRadius: "var(--radius)",
+                }}
+              >
+                I funded my wallet
+              </button>
+            </div>
+            {faucetTip && (
+              <p className="text-xs mt-2" style={{ color: "var(--text-tertiary)" }}>
+                Your address was copied. Paste it into the faucet form. Tokens typically arrive in 30–90 seconds.
+              </p>
+            )}
+          </div>
+        )
       )}
     </Card>
   );

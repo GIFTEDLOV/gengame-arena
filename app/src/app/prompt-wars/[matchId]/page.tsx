@@ -23,6 +23,7 @@ import {
 } from "@/lib/genlayer";
 import type { Match } from "@/lib/genlayer";
 import { useActiveWallet } from "@/lib/useActiveWallet";
+import { useRegistration } from "@/lib/RegistrationContext";
 import { useAutoResolve } from "@/lib/useAutoResolve";
 
 const ZERO_ADDR = "0x" + "0".repeat(40);
@@ -65,6 +66,7 @@ export default function MatchPage() {
   const { matchId } = useParams<{ matchId: string }>();
   const matchIdNum = Number(matchId);
   const { wallet } = useActiveWallet();
+  const { requireRegistration } = useRegistration();
   const currentAddr = wallet?.address?.toLowerCase() ?? null;
 
   const [match, setMatch] = useState<Match | null>(null);
@@ -315,7 +317,7 @@ export default function MatchPage() {
                 <div className="flex flex-wrap gap-3">
                   {!isPlayer && (
                     <TxButton
-                      onClick={() => joinPromptWarsMatch(matchIdNum, wallet).then(() => { fetchMatch(); })}
+                      onClick={async () => { if (!await requireRegistration()) return; await joinPromptWarsMatch(matchIdNum, wallet); fetchMatch(); }}
                       className="rounded-lg px-6 py-2 font-semibold hover:opacity-90 text-[#0a0a0f] bg-[var(--game-prompt-wars)]"
                       description="Joining Prompt Wars match"
                     >
@@ -389,7 +391,7 @@ export default function MatchPage() {
                       style={{ fontFamily: "var(--font-serif)", color: "var(--text-primary)" }}
                     />
                     <TxButton
-                      onClick={() => submitPrompt(matchIdNum, prompt, wallet).then(() => { fetchMatch(); })}
+                      onClick={async () => { if (!await requireRegistration()) return; await submitPrompt(matchIdNum, prompt, wallet); fetchMatch(); }}
                       disabled={prompt.length === 0}
                       className="rounded-lg px-6 py-2 font-semibold hover:opacity-90 disabled:opacity-50 text-[#0a0a0f] bg-[var(--game-prompt-wars)]"
                       description="Submitting prompt"

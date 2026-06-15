@@ -21,6 +21,7 @@ import {
 } from "@/lib/genlayer";
 import type { Market } from "@/lib/genlayer";
 import { useActiveWallet } from "@/lib/useActiveWallet";
+import { useRegistration } from "@/lib/RegistrationContext";
 import { getDailyMatchIds } from "@/lib/dailyContentTrigger";
 
 const MIN_RESOLUTION_HOURS = 24;
@@ -167,6 +168,7 @@ function MarketCard({ market, username, isDaily }: { market: Market; username?: 
 
 export default function PredictionsPage() {
   const { wallet } = useActiveWallet();
+  const { requireRegistration } = useRegistration();
   const router = useRouter();
 
   const [question, setQuestion] = useState("");
@@ -230,6 +232,7 @@ export default function PredictionsPage() {
   }, [fetchMarkets]);
 
   async function handleCreate() {
+    if (!await requireRegistration()) return;
     if (!wallet) throw new Error("No wallet");
     const resolutionTs = Math.floor(new Date(resolutionInput).getTime() / 1000);
     const nowTs = Math.floor(Date.now() / 1000);

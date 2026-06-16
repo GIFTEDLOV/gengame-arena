@@ -36,6 +36,21 @@ export default function RegisterModal({ wallet, onSuccess, onClose }: Props) {
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const [balance, setBalance] = useState<bigint | null>(null);
+  const [txStartTime, setTxStartTime] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!loading || !txStartTime) return;
+    const update = () => {
+      const s = (Date.now() - txStartTime) / 1000;
+      if (s < 5) setStatusMessage("Submitting registration…");
+      else if (s < 30) setStatusMessage("GenLayer validators are processing your registration…");
+      else if (s < 90) setStatusMessage("Almost done — validators reaching consensus…");
+      else setStatusMessage("Still working — Bradbury testnet is occasionally slow.");
+    };
+    update();
+    const timer = setInterval(update, 1000);
+    return () => clearInterval(timer);
+  }, [loading, txStartTime]);
 
   useEffect(() => {
     if (!wallet?.address) return;
@@ -78,6 +93,7 @@ export default function RegisterModal({ wallet, onSuccess, onClose }: Props) {
       return;
     }
     setLoading(true);
+    setTxStartTime(Date.now());
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await registerUser(username, wallet as any);
@@ -101,6 +117,7 @@ export default function RegisterModal({ wallet, onSuccess, onClose }: Props) {
       }
     } finally {
       setLoading(false);
+      setTxStartTime(null);
       setStatusMessage("");
     }
   }

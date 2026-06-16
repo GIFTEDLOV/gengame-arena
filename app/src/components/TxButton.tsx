@@ -1,5 +1,5 @@
 "use client";
-import { useState, type ReactNode } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import { useSettling } from "@/lib/settling";
 import { friendlyError, type FriendlyError } from "@/lib/errorMessages";
 
@@ -28,7 +28,32 @@ export default function TxButton({
 }: TxButtonProps) {
   const [status, setStatus] = useState<"idle" | "pending" | "done">("idle");
   const [error, setError] = useState<FriendlyError | null>(null);
+  const [pendingStart, setPendingStart] = useState<number | null>(null);
+  const [timedMsg, setTimedMsg] = useState("");
   const { addTx, removeTx } = useSettling();
+
+  useEffect(() => {
+    if (status === "pending") {
+      setPendingStart(Date.now());
+    } else {
+      setPendingStart(null);
+      setTimedMsg("");
+    }
+  }, [status]);
+
+  useEffect(() => {
+    if (status !== "pending" || !pendingStart) return;
+    const update = () => {
+      const s = (Date.now() - pendingStart) / 1000;
+      if (s < 5) setTimedMsg(pendingLabel);
+      else if (s < 30) setTimedMsg("GenLayer validators are processing…");
+      else if (s < 90) setTimedMsg("Almost done — validators reaching consensus…");
+      else setTimedMsg("Still working — Bradbury testnet is occasionally slow.");
+    };
+    update();
+    const timer = setInterval(update, 1000);
+    return () => clearInterval(timer);
+  }, [status, pendingStart, pendingLabel]);
 
   async function handle() {
     if (status === "pending") return;
@@ -83,7 +108,7 @@ export default function TxButton({
                 d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
               />
             </svg>
-            {pendingLabel}
+            {timedMsg || pendingLabel}
           </span>
         ) : isDone ? (
           "✓ Done"

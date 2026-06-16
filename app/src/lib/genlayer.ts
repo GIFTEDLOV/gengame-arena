@@ -10,6 +10,13 @@ function glAddr(a: string): GLAddress {
   return a as GLAddress;
 }
 
+// Shared testnet RPC rate-limits are expected and noisy. Rethrow so polling callers
+// can skip state updates and preserve the last-good display data.
+function isRateLimit(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return msg.toLowerCase().includes("rate limit") || msg.toLowerCase().includes("rate_limit");
+}
+
 export const USER_REGISTRY_ADDRESS =
   process.env.NEXT_PUBLIC_USER_REGISTRY_ADDRESS ??
   "0x42fCFf2df6FFE90dF487FF8Be1724135d465755F";
@@ -493,7 +500,8 @@ export async function getOpenMarkets(limit: number): Promise<number[]> {
       args: [limit],
     });
     return ((result as bigint[]) ?? []).map(Number);
-  } catch {
+  } catch (err) {
+    if (isRateLimit(err)) throw err;
     return [];
   }
 }
@@ -507,7 +515,8 @@ export async function getResolvedMarkets(limit: number): Promise<number[]> {
       args: [limit],
     });
     return ((result as bigint[]) ?? []).map(Number);
-  } catch {
+  } catch (err) {
+    if (isRateLimit(err)) throw err;
     return [];
   }
 }
@@ -737,7 +746,8 @@ export async function getOpenTriviaMatches(limit: number): Promise<number[]> {
       args: [limit],
     });
     return ((result as bigint[]) ?? []).map(Number);
-  } catch {
+  } catch (err) {
+    if (isRateLimit(err)) throw err;
     return [];
   }
 }
@@ -976,7 +986,8 @@ export async function getOpenTitleMatches(limit: number): Promise<number[]> {
       args: [limit],
     });
     return ((result as bigint[]) ?? []).map(Number);
-  } catch {
+  } catch (err) {
+    if (isRateLimit(err)) throw err;
     return [];
   }
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import AuthGuard from "@/components/AuthGuard";
 import AppShell from "@/components/shell/AppShell";
 import { useActiveWallet } from "@/lib/useActiveWallet";
@@ -306,6 +306,7 @@ function LeaderboardsPage() {
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const hasDataRef = useRef(false);
 
   const tab = TABS.find((t) => t.id === activeTab)!;
 
@@ -317,9 +318,13 @@ function LeaderboardsPage() {
       try {
         const data = await t.fetcher(20);
         setEntries(data);
+        hasDataRef.current = true;
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Failed to load leaderboard.");
-        setEntries([]);
+        if (!hasDataRef.current) {
+          setError(e instanceof Error ? e.message : "Failed to load leaderboard.");
+          setEntries([]);
+        }
+        // If we already have data, preserve it — don't clear on transient failures
       } finally {
         setLoading(false);
       }

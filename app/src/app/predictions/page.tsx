@@ -221,8 +221,9 @@ export default function PredictionsPage() {
   }, [wallet]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    fetchMarkets();
-    const id = setInterval(fetchMarkets, 5000);
+    const run = async () => { try { await fetchMarkets(); } catch {} };
+    run();
+    const id = setInterval(run, 5000);
     getDailyMatchIds("predictions").then(async (ids) => {
       if (ids.length === 0) { setDailyMarkets([]); return; }
       const results = await Promise.all(ids.map((id) => getMarket(Number(id))));

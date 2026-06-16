@@ -145,8 +145,9 @@ export default function TitleWarsPage() {
   }, [wallet]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    fetchMatches();
-    const id = setInterval(fetchMatches, 5000);
+    const run = async () => { try { await fetchMatches(); } catch {} };
+    run();
+    const id = setInterval(run, 5000);
     getDailyMatchIds("title-wars").then(async (ids) => {
       if (ids.length === 0) { setDailyMatches([]); return; }
       const results = await Promise.all(ids.map((id) => getTitleMatch(Number(id))));

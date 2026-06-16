@@ -23,6 +23,7 @@ import type { TitleMatch } from "@/lib/genlayer";
 import { useActiveWallet } from "@/lib/useActiveWallet";
 import { useRegistration } from "@/lib/RegistrationContext";
 import { getDailyMatchIds } from "@/lib/dailyContentTrigger";
+import { displayName as libDisplayName } from "@/lib/displayName";
 
 const MAX_EXCERPT_CHARS = 1500;
 const DEFAULT_MAX_PLAYERS = 10;
@@ -94,7 +95,7 @@ function MatchCard({ match, hostName, isDaily }: { match: TitleMatch; hostName?:
               Daily
             </span>
           )}
-          <span>by {hostName ?? match.host_str.slice(0, 10) + "…"}</span>
+          <span>by {libDisplayName(hostName ?? null, match.host_str)}</span>
         </div>
       </div>
       <Link

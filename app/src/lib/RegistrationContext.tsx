@@ -6,7 +6,6 @@ import {
   useState,
   useCallback,
   useEffect,
-  useRef,
   type ReactNode,
 } from "react";
 import { getUserProfile } from "@/lib/genlayer";
@@ -17,6 +16,7 @@ interface RegistrationContextValue {
   isRegistered: boolean | null; // null = loading
   username: string | null;
   requireRegistration: () => Promise<boolean>;
+  openRegistrationModal: () => void;
   refreshUsername: () => Promise<void>;
 }
 
@@ -24,6 +24,7 @@ const defaultValue: RegistrationContextValue = {
   isRegistered: null,
   username: null,
   requireRegistration: async () => true,
+  openRegistrationModal: () => {},
   refreshUsername: async () => {},
 };
 
@@ -38,7 +39,6 @@ export function RegistrationProvider({ children }: { children: ReactNode }) {
   const [isRegistered, setIsRegistered] = useState<boolean | null>(null);
   const [username, setUsername] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
-  const pendingResolveRef = useRef<((value: boolean) => void) | null>(null);
 
   useEffect(() => {
     if (!ready) return;
@@ -77,30 +77,28 @@ export function RegistrationProvider({ children }: { children: ReactNode }) {
     }
   }, [wallet?.address]);
 
+  // Registration is now opt-in; users can play without setting a username.
+  // The wallet status bar still allows username setup via openRegistrationModal().
   const requireRegistration = useCallback((): Promise<boolean> => {
-    if (isRegistered === true) return Promise.resolve(true);
-    return new Promise<boolean>((resolve) => {
-      pendingResolveRef.current = resolve;
-      setShowModal(true);
-    });
-  }, [isRegistered]);
+    return Promise.resolve(true);
+  }, []);
+
+  const openRegistrationModal = useCallback(() => {
+    setShowModal(true);
+  }, []);
 
   function handleSuccess(newUsername: string) {
     setIsRegistered(true);
     setUsername(newUsername);
     setShowModal(false);
-    pendingResolveRef.current?.(true);
-    pendingResolveRef.current = null;
   }
 
   function handleClose() {
     setShowModal(false);
-    pendingResolveRef.current?.(false);
-    pendingResolveRef.current = null;
   }
 
   return (
-    <RegistrationContext.Provider value={{ isRegistered, username, requireRegistration, refreshUsername }}>
+    <RegistrationContext.Provider value={{ isRegistered, username, requireRegistration, openRegistrationModal, refreshUsername }}>
       {children}
       {showModal && (
         <RegisterModal wallet={wallet} onSuccess={handleSuccess} onClose={handleClose} />

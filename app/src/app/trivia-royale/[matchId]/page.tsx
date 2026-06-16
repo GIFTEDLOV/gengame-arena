@@ -24,6 +24,7 @@ import type { TriviaMatch, TriviaQuestion } from "@/lib/genlayer";
 import { useActiveWallet } from "@/lib/useActiveWallet";
 import { useRegistration } from "@/lib/RegistrationContext";
 import { useAutoResolve } from "@/lib/useAutoResolve";
+import { displayName as libDisplayName } from "@/lib/displayName";
 
 function useCountdown(deadlineUnix: number | null) {
   const [secsLeft, setSecsLeft] = useState<number | null>(null);
@@ -120,7 +121,7 @@ export default function TriviaMatchPage() {
   }, [match?.players]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function displayName(addr: string) {
-    return playerNames[addr.toLowerCase()] ?? addr.slice(0, 10) + "…";
+    return libDisplayName(playerNames[addr.toLowerCase()] ?? null, addr);
   }
 
   // Must be called unconditionally before any early return

@@ -25,6 +25,7 @@ import type { Match } from "@/lib/genlayer";
 import { useActiveWallet } from "@/lib/useActiveWallet";
 import { useRegistration } from "@/lib/RegistrationContext";
 import { useAutoResolve } from "@/lib/useAutoResolve";
+import { displayName as libDisplayName } from "@/lib/displayName";
 
 const MAX_PROMPT = 500;
 const DEADLINE_UNSET = BigInt(0);
@@ -139,7 +140,7 @@ export default function MatchPage() {
   const allSubmitted = totalPlayers > 0 && submittedCount === totalPlayers;
 
   function displayName(addr: string) {
-    return playerUsernames[addr.toLowerCase()] ?? addr.slice(0, 10) + "…";
+    return libDisplayName(playerUsernames[addr.toLowerCase()] ?? null, addr);
   }
 
   function copyLink() {

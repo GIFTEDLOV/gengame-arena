@@ -23,6 +23,7 @@ import type { Market } from "@/lib/genlayer";
 import { useActiveWallet } from "@/lib/useActiveWallet";
 import { useRegistration } from "@/lib/RegistrationContext";
 import { getDailyMatchIds } from "@/lib/dailyContentTrigger";
+import { displayName as libDisplayName } from "@/lib/displayName";
 
 const MIN_RESOLUTION_HOURS = 24;
 const MAX_RESOLUTION_HOURS = 168;
@@ -147,7 +148,7 @@ function MarketCard({ market, username, isDaily }: { market: Market; username?: 
 
       {state === PRED_STATE_RESOLVED && market.ranking.length > 0 && (
         <p className="mb-2 text-xs" style={{ color: "var(--text-secondary)" }}>
-          Winner: {username ?? market.ranking[0].slice(0, 10) + "…"}
+          Winner: {libDisplayName(username ?? null, market.ranking[0])}
         </p>
       )}
 

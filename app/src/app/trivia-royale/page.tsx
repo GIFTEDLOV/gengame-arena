@@ -21,6 +21,7 @@ import type { TriviaMatch } from "@/lib/genlayer";
 import { useActiveWallet } from "@/lib/useActiveWallet";
 import { useRegistration } from "@/lib/RegistrationContext";
 import { getDailyMatchIds } from "@/lib/dailyContentTrigger";
+import { displayName as libDisplayName } from "@/lib/displayName";
 
 const MAX_TOPIC_CHARS = 80;
 const DEFAULT_MAX_PLAYERS = 10;
@@ -101,7 +102,7 @@ function MatchCard({ match, hostName, isLive, isDaily }: { match: TriviaMatch; h
           {isFull && <span className="ml-1 text-amber-400">(full)</span>}
         </span>
         <span className="text-xs" style={{ color: "var(--text-tertiary)" }}>
-          {hostName ?? match.host_str.slice(0, 10) + "…"}
+          {libDisplayName(hostName ?? null, match.host_str)}
         </span>
       </div>
 

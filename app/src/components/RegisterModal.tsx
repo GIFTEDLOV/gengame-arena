@@ -144,7 +144,7 @@ export default function RegisterModal({ wallet, onSuccess, onClose }: Props) {
         {/* Header */}
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>
-            Choose a username to play
+            Set a username (optional)
           </h2>
           <button
             onClick={onClose}
@@ -157,8 +157,7 @@ export default function RegisterModal({ wallet, onSuccess, onClose }: Props) {
         </div>
 
         <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
-          Register your on-chain identity once — then create and join matches across all
-          games.
+          Pick a name that appears next to your matches on leaderboards. Optional — you can play anonymously.
         </p>
 
         {/* Balance row */}

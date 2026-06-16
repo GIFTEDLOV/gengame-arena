@@ -36,7 +36,7 @@ function formatGen(wei: bigint): string {
 
 export default function WalletStatusBar() {
   const { wallet, ready } = useActiveWallet();
-  const { isRegistered, username, requireRegistration, refreshUsername } = useRegistration();
+  const { isRegistered, username, openRegistrationModal, refreshUsername } = useRegistration();
   const [balance, setBalance] = useState<bigint | null>(null);
   const [fetching, setFetching] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -95,8 +95,8 @@ export default function WalletStatusBar() {
     window.open(FAUCET_URL, "_blank", "noopener,noreferrer");
   }
 
-  async function handleSetUsername() {
-    await requireRegistration();
+  function handleSetUsername() {
+    openRegistrationModal();
   }
 
   async function handleEditSuccess() {
@@ -205,7 +205,7 @@ export default function WalletStatusBar() {
                   padding: 0,
                 }}
               >
-                not set — Set username
+                not set — Set one (optional)
               </button>
             )}
           </div>

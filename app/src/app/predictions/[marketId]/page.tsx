@@ -24,6 +24,7 @@ import type { Market } from "@/lib/genlayer";
 import { useActiveWallet } from "@/lib/useActiveWallet";
 import { useRegistration } from "@/lib/RegistrationContext";
 import { useAutoResolve } from "@/lib/useAutoResolve";
+import { displayName as libDisplayName } from "@/lib/displayName";
 
 function useCountdown(resolutionTs: number | null): { display: string; expired: boolean; color: string } {
   const [secsLeft, setSecsLeft] = useState<number | null>(null);
@@ -113,7 +114,7 @@ export default function MarketPage() {
   const myPrediction = isPlayer ? market!.predictions[playerIdx] : null;
 
   const winnerAddr = market?.ranking[0]?.toLowerCase();
-  const winnerUsername = winnerAddr ? (playerUsernames[winnerAddr] ?? winnerAddr.slice(0, 10) + "…") : null;
+  const winnerUsername = winnerAddr ? libDisplayName(playerUsernames[winnerAddr] ?? null, winnerAddr) : null;
 
   const yesCount = isBinary ? market?.predictions.filter((p) => p === true).length ?? 0 : 0;
   const noCount = isBinary ? market?.predictions.filter((p) => p === false).length ?? 0 : 0;
@@ -124,7 +125,7 @@ export default function MarketPage() {
     : "";
 
   function displayName(addr: string) {
-    return playerUsernames[addr.toLowerCase()] ?? addr.slice(0, 10) + "…";
+    return libDisplayName(playerUsernames[addr.toLowerCase()] ?? null, addr);
   }
 
   if (loading || (!market && nullCount < 3)) {
